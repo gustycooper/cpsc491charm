@@ -11,9 +11,300 @@
 mva pc, do_ker // branch to kerel mode rupt handler
 mva pc, do_tmr // branch to tmr rupt handler
 
+// process table
+// 8 procs, each 128 bytes
+// a process is structured as the following:
+//    uint state
+//      UNUSED -> 0
+//      EMBRYO -> 1
+//      RUNNABLE -> 2
+//      RUNNING -> 3
+//      SLEEPING -> 4
+//    uint pid
+//    struct trapframe*
+//    struct context; 12 stored registers
+//    uint killed
+//    char[16] name
+
 .data 0xef00
+.label ptable
+// process 1
+3       // state
+1       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x6775  // "gusty"
+0x7374
+0x7900
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// process 2
+2       // state
+2       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x6c61  // "lauren"
+0x7572
+0x656e
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// process 3
+0       // state
+3       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x0000  // ""
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// process 4
+0       // state
+4       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x0000  // ""
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// process 5
+0       // state
+5       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x0000  // ""
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// process 6
+0       // state
+6       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x0000  // ""
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// process 7
+0       // state
+7       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x0000  // ""
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// process 8
+0       // state
+8       // pid
+0       // trapframe*
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
+0       // killed
+0x0000  // ""
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0x0000
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+0       // unused space
+
+// struct proc*
+// pointer to current process running
+.data 0xdf00
 .label curr_proc
-0
+ptable
 
 // base address of os api, scanf, printf
 // This code executes in kernel mode. It executes ioi
@@ -335,5 +626,34 @@ mov pc, lr
 
 
 .label schedule
-mov r0, r0
-mks r1, r1        // mks r1, kpsr
+// sub sp, sp, []
+// str lr, [sp, []]
+// don't forget the first sched
+.label for_loop_outer
+//mva r0, schedcontext  // temporary; scheduler stack is current at 0x6000
+ldr sp, [r0, 36]
+mva r0, ptable
+str r0, [sp, 0]       // p = &ptable
+.label for_loop_inner
+ldr r0, [sp, 0]
+cmp r0, 0xf300      // check if at end of ptable
+bge for_loop_outer    // if so, move back to start of ptable
+ldr r1, [r0, 0]
+cmp r1, 2             // check if process is RUNNABLE
+bne inner_incr
+ldr r0, curr_proc     // change old curr_proc state to RUNNABLE
+mov r1, 2
+str r1, [r0, 0]
+ldr r0, [sp, 0]       // put p into r0
+str r0, curr_proc
+// switchuvm - later
+mov r1, 3             // change new curr_proc state to RUNNING
+str r1, [r0, 0]
+.label inner_incr
+ldr r0, [sp, 0]
+add r0, r0, 0x80
+str r0, [sp, 0]
+bal for_loop_inner
+.label end
+bal end
+
