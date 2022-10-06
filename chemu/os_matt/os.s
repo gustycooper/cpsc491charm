@@ -300,11 +300,32 @@ mva pc, do_tmr // branch to tmr rupt handler
 0       // unused space
 0       // unused space
 
+.label kstack
+0
+.label ustack
+0
+.label forkret 0
 // struct proc*
 // pointer to current process running
 .data 0xdf00
 .label curr_proc
 ptable
+
+.data 0xdf04
+.label sched_context
+0xdf08  // points to mem for sched_context
+0       // r4
+0       // r5
+0       // r6
+0       // r7
+0       // r8
+0       // r9
+0       // r10
+0       // r11
+0       // r12
+0       // r13
+0       // r14
+0       // r15
 
 // base address of os api, scanf, printf
 // This code executes in kernel mode. It executes ioi
@@ -443,9 +464,10 @@ blr trap
 // trapret is used in allocproc(). lr = trapret
 .label trapret
 // What is in r13 when we get to here?
+// r13 points to top of trap frame
 //mov r0, sp // save sp in case it is changed to sp_usr after the following LDMFD instruction */
 //ldmfd r0, {r13}^ /* restore user mode sp */
-ldr r0,  [sp, 4] // restore user mode sp from trapframe
+ldr r0,  [sp], 4 // restore user mode sp from trapframe
 mov sp, r0       // restore sp
 ldr r0,  [sp], 4
 ldr r1,  [sp], 4
@@ -510,7 +532,7 @@ blr trap
 // Somehow r1 indicates return to user vs returning to kernel
 mov r0, sp
 add r0, r0, #76
-//LDMIA r0, {r1}
+//LDMIA r0, {r1} // load r1 from the stack, r0 has the stack address
 mov r2, r1
 and r2, r2, #0xf
 cmp r2, #0
@@ -563,7 +585,7 @@ str r5,  [sp, -4]! // save lr
 str r4,  [sp, -4]! // save lr
 
 // switch stacks
-str sp, [r0]
+str sp, [r0]      // lookie here: puts address into curr_proc->context
 mov sp, r1
 
 // load new callee-save registers
@@ -587,7 +609,7 @@ ldr r1, [r0, 64]  // put trap type (0x40, 0x80) in r1
 cmp r1, 0x40      // 0x4 is system call (ker instr)
 bne tmr_rupt      // timer interrupts
 // see code in trap.c
-mov pc, lr        // return
+mov pc, lr        // return for now. Later - call os_api
 .label tmr_rupt
 // check error conditions - see trap.c
 ldr r1, curr_proc
@@ -618,9 +640,11 @@ mov pc, lr
 //  curr_cpu->intena = intena;
 .label sched
 str lr,  [sp, -4]!
-mov r0, r0        // mov address of context to r0
-mov r1, r1        // mov address of context to r1
-blr swtch
+// Is this correct? curr_proc->context used to be pointer
+ldr r0, curr_proc // addr of curr_proc to r0
+add r0, r0, 12    // put address of curr_proc->context in r0, Update 12 to be correct
+ldr r1, sched_context  // mov address of scheduler context to r0
+blr swtch         // switch to scheduler's context
 ldr lr,  [sp], 4
 mov pc, lr
 
@@ -649,6 +673,11 @@ str r0, curr_proc
 // switchuvm - later
 mov r1, 3             // change new curr_proc state to RUNNING
 str r1, [r0, 0]
+// call swtch
+mva r0, 0xdf04        // &sched_context
+ldr r1, curr_proc
+ldr r1, [r1, 12]      // curr_proc->context
+blr swtch
 .label inner_incr
 ldr r0, [sp, 0]
 add r0, r0, 0x80
@@ -657,3 +686,44 @@ bal for_loop_inner
 .label end
 bal end
 
+#define PROC_SIZE 32
+#define KSTACK_SIZE 256
+#define USTACK_SIZE 256
+#define TF_SIZE 80
+#define CONTEXT_SIZE 48
+#define PROC_KSTACK 8
+#define PROC_TF 24
+#define PROC_SP 20
+#define PROC_CONTEXT 28
+#define CONTEXT_PC 44
+#define CONTEXT_LR 36
+#define GUSTY 100
+#define COLETTA 8
+
+// ptable, kstack, and ustack are sequential blocks
+// r0 has index to allocated in ptable, kstack, ustack
+.label allocproc
+mul r1, r0, PROC_SIZE       // mul by sizeof ptable entry
+mva r2, ptable
+add r2, r2, r1              // r2 has address of ptable entry to use
+mul r1, r0, KSTACK_SIZE     // mul by sizeof kstack frame
+mva r3, kstack
+add r3, r3, r1              // r3 has address of kstack to use
+add r3, r3, r1              // stacks grow backwards, r3 has addr of bottom of kstack
+str r3, [sp, -4]!           // save kstack on stack
+mul r1, r0, USTACK_SIZE     // mul by sizeof ustack
+mva r3, ustack
+add r3, r3, r1              // r3 has address of ustack to use
+add r0, r3, r1              // stacks grow backwards, r3 has addr of bottom of ustack
+sub r3, r3, TF_SIZE         // sub sizeof trapframe, r3 has addr of trapframe
+str r3, [r2, PROC_TF]       // stro to p->tf
+sub r3, r3, CONTEXT_SIZE    // sub sizeof context, r3 has addr of context
+str r3, [r2, PROC_CONTEXT]  // str to p->context
+str r0, [r2, PROC_SP]       // str to p->kstack - WRONG
+ldr r0, [sp], 4             // retrieve addr of kstack from stack
+str r0, [r2, PROC_KSTACK]   // str to p->kstack
+mva r1, forkret
+str r1, [r3, CONTEXT_PC]    // str to p->context->pc
+mva r1, trapret
+str r1, [r3, CONTEXT_LR]    // str p->context->lr
+mov pc, lr

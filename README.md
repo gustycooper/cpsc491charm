@@ -11,5 +11,6 @@ Charm consists of several components. You can read more at *[Charm Guide](https:
 
 This version of Charm is developing an OS that manages processes. 
 * Matt Nguyen and Gusty are working on this.
-* We only have chasm and chemu.
+* We have chasm, chemu, and chpre.
+* chpre does not have a makefile. gcc -o chpre chepre.c
 * We do not have chibicc at this time.
