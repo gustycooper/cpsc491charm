@@ -12,296 +12,94 @@ mva pc, do_ker // branch to kerel mode rupt handler
 mva pc, do_tmr // branch to tmr rupt handler
 
 // process table
-// 8 procs, each 128 bytes
+// 8 procs, each 64 bytes
 // a process is structured as the following:
+//    uint pid
 //    uint state
 //      UNUSED -> 0
 //      EMBRYO -> 1
 //      RUNNABLE -> 2
 //      RUNNING -> 3
 //      SLEEPING -> 4
-//    uint pid
-//    struct trapframe*
-//    struct context; 12 stored registers
+//    uint startaddr
+//    uint size in bytes
+//    char *ustack
+//    char *kstack
+//    struct context *context
+//    struct trapframe *tf
+//    struct proc *parent
+//    void *chan
 //    uint killed
+//    struct pde_t *pgdir
 //    char[16] name
 
 .data 0xef00
 .label ptable
-// process 1
-3       // state
+// process 1 0xef00
 1       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
+3       // state
+0       // start addr
+0       // size in bytes
+0       // *ustack
+0       // *kstack
+0       // *context
+0       // *tf
+0       // *parent
+0       // *chan
 0       // killed
-0x6775  // "gusty"
-0x7374
-0x7900
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-
-// process 2
-2       // state
+0       // *pgdir
+0x67757374  // "gusty" 0xef30
+0x79000000  // 0xef34
+0x00000000  // 0xef38
+0x00000000  // 0xef3c
+// process 2 0xef40
 2       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
+2       // state
+0       // start addr
+0       // size in bytes
+0       // *ustack
+0       // *kstack
+0       // *context
+0       // *tf
+0       // *parent
+0       // *chan
 0       // killed
-0x6c61  // "lauren"
-0x7572
-0x656e
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-
-// process 3
-0       // state
+0       // *pgdir
+0x6c617572  // "lauren" 0xef70
+0x656e0000  // 0xef74
+0x00000000  // 0xef78
+0x00000000  // 0xef7c
+// process 3 0xef80
 3       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
-0       // killed
-0x0000  // ""
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-
-// process 4
 0       // state
-4       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
+0       // start addr
+0       // size in bytes
+0       // *ustack
+0       // *kstack
+0       // *context
+0       // *tf
+0       // *parent
+0       // *chan
 0       // killed
+0       // *pgdir
 0x0000  // ""
 0x0000
 0x0000
 0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
+// process 4 0xefc0
+// process 5 0xf000
+// process 6 0xf040
+// process 7 0xf080
+// process 8 0xf0c0
 
-// process 5
-0       // state
-5       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
-0       // killed
-0x0000  // ""
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-
-// process 6
-0       // state
-6       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
-0       // killed
-0x0000  // ""
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-
-// process 7
-0       // state
-7       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
-0       // killed
-0x0000  // ""
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-
-// process 8
-0       // state
-8       // pid
-0       // trapframe*
-0       // r4
-0       // r5
-0       // r6
-0       // r7
-0       // r8
-0       // r9
-0       // r10
-0       // r11
-0       // r12
-0       // r13
-0       // r14
-0       // r15
-0       // killed
-0x0000  // ""
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0x0000
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-0       // unused space
-
+// kstack's are 256 bytes each, starting at 0xc000
+// from 0xc000 to 0xc800
+.data 0xc000
 .label kstack
 0
+// ustacks are 256 bytes each, starting at 0x6000
+// from 0x6000 to 0x68000
+.data 0x06000
 .label ustack
 0
 .label forkret 0
@@ -419,6 +217,14 @@ str r1, [r0, 4]
 mva sp, os_stack
 mkd r2, sp        // initialize kr13
 mkd r5, sp        // initialize ir13
+mov r0, 0
+mva r1, 0x1234
+mva r2, 0xef30
+blr allocproc
+mov r0, 1
+mva r1, 0x5678
+mva r2, 0xef30
+blr allocproc
 blr schedule
 
 
@@ -575,14 +381,14 @@ mov pc, lr  // subs pc,lr,#0
 str lr,  [sp, -4]! // save return address, lr has return address
 str lr,  [sp, -4]! // save lr
 str r12, [sp, -4]! // save r12 through r4
-str r11, [sp, -4]! // save lr
-str r10, [sp, -4]! // save lr
-str r9,  [sp, -4]! // save lr
-str r8,  [sp, -4]! // save lr
-str r7,  [sp, -4]! // save lr
-str r6,  [sp, -4]! // save lr
-str r5,  [sp, -4]! // save lr
-str r4,  [sp, -4]! // save lr
+str r11, [sp, -4]!
+str r10, [sp, -4]!
+str r9,  [sp, -4]!
+str r8,  [sp, -4]!
+str r7,  [sp, -4]!
+str r6,  [sp, -4]!
+str r5,  [sp, -4]!
+str r4,  [sp, -4]!
 
 // switch stacks
 str sp, [r0]      // lookie here: puts address into curr_proc->context
@@ -686,44 +492,68 @@ bal for_loop_inner
 .label end
 bal end
 
-#define PROC_SIZE 32
+.label strcpy
+mov r3, r0         // save dest str address
+.label strcpyloop
+ldb r2, [r1], 1    // char from src str
+cmp r2, 0          // see if done
+beq strcpydone     // yes
+stb r2, [r0], 1    // place src str char into dest str
+bal strcpyloop     // keep copying
+.label strcpydone
+mov r0, r3         // return dest str address
+mov r15, r14       // return
+
+#define PROC_SIZE 64
 #define KSTACK_SIZE 256
 #define USTACK_SIZE 256
 #define TF_SIZE 80
+#define TF_USP 0
 #define CONTEXT_SIZE 48
-#define PROC_KSTACK 8
-#define PROC_TF 24
-#define PROC_SP 20
-#define PROC_CONTEXT 28
+#define PROC_STARTADDR 8
+#define PROC_USTACK 16
+#define PROC_KSTACK 20
+#define PROC_CONTEXT 24
+#define PROC_NAME 48
+#define PROC_TF 28
 #define CONTEXT_PC 44
 #define CONTEXT_LR 36
-#define GUSTY 100
-#define COLETTA 8
 
 // ptable, kstack, and ustack are sequential blocks
-// r0 has index to allocated in ptable, kstack, ustack
+// r0 has index to allocate in ptable, kstack, ustack
+// r1 has start address of proc (already loaded)
+// r2 has address of proc's name (string)
 .label allocproc
+str r14, [sp, -4]!          // save lr on stack
+str r2, [sp, -4]!           // save proc's name addr on stack
+str r1, [sp, -4]!           // save proc's start addr on stack
 mul r1, r0, PROC_SIZE       // mul by sizeof ptable entry
 mva r2, ptable
 add r2, r2, r1              // r2 has address of ptable entry to use
 mul r1, r0, KSTACK_SIZE     // mul by sizeof kstack frame
 mva r3, kstack
 add r3, r3, r1              // r3 has address of kstack to use
-add r3, r3, r1              // stacks grow backwards, r3 has addr of bottom of kstack
+add r3, r3, KSTACK_SIZE     // stacks grow backwards, r3 has addr of bottom of kstack
 str r3, [sp, -4]!           // save kstack on stack
 mul r1, r0, USTACK_SIZE     // mul by sizeof ustack
 mva r3, ustack
 add r3, r3, r1              // r3 has address of ustack to use
-add r0, r3, r1              // stacks grow backwards, r3 has addr of bottom of ustack
+add r0, r3, USTACK_SIZE     // stacks grow backwards, r0 has addr of bottom of ustack
 sub r3, r3, TF_SIZE         // sub sizeof trapframe, r3 has addr of trapframe
-str r3, [r2, PROC_TF]       // stro to p->tf
+str r3, [r2, PROC_TF]       // str to p->tf
 sub r3, r3, CONTEXT_SIZE    // sub sizeof context, r3 has addr of context
 str r3, [r2, PROC_CONTEXT]  // str to p->context
-str r0, [r2, PROC_SP]       // str to p->kstack - WRONG
+str r0, [r2, PROC_USTACK]   // str to p->ustack
 ldr r0, [sp], 4             // retrieve addr of kstack from stack
 str r0, [r2, PROC_KSTACK]   // str to p->kstack
+ldr r0, [sp], 4             // retrieve proc's start addr from stack
+str r0, [r2, PROC_STARTADDR]   // str to p->startaddr
+ldr r1, [sp], 4             // retrieve proc's name from stack
+add r0, r2, PROC_NAME       // address p->name to r0
+blr strcpy
 mva r1, forkret
 str r1, [r3, CONTEXT_PC]    // str to p->context->pc
 mva r1, trapret
 str r1, [r3, CONTEXT_LR]    // str p->context->lr
+ldr lr, [sp], 4             // retrieve lr from stack
 mov pc, lr

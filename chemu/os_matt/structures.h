@@ -1,47 +1,40 @@
-// Layout of the trap frame built on the stack
-// by exception.s, and passed to trap().
-// #define TF_SIZE 80
-struct trapframe {
-  uint sp; // user mode sp
-  uint r0;
-  uint r1; 
-  uint r2;
-  uint r3;
-  uint r4;
-  uint r5;
-  uint r6;
-  uint r7;
-  uint r8;
-  uint r9;
-  uint r10;
-  uint r11;
-  uint r12;
-  uint r13;
-  uint r14;
-  uint trapno;
-  //uint ifar; // Instruction Fault Address Register (IFAR)
-  uint cpsr;
-  uint spsr; // saved cpsr from the trapped/interrupted mode
-  uint pc; // return address of the interrupted code
+// trap frame built on the stack by exception.s, and passed to trap().
+struct trapframe {  // #define TF_SIZE 80
+  uint sp;     // ( 0)user mode sp
+  uint r0;     // ( 4)
+  uint r1;     // ( 8)
+  uint r2;     // (12)
+  uint r3;     // (16)
+  uint r4;     // (20)
+  uint r5;     // (24)
+  uint r6;     // (28)
+  uint r7;     // (32)
+  uint r8;     // (36)
+  uint r9;     // (40)
+  uint r10;    // (44)
+  uint r11;    // (48)
+  uint r12;    // (52)
+  uint r13;    // (56)
+  uint r14;    // (60)
+  uint trapno; // (64)
+  //uint ifar; // (  )Instruction Fault Address Register (IFAR)
+  uint cpsr;   // (68)
+  uint spsr;   // (72) saved cpsr from the trapped/interrupted mode
+  uint pc;     // (76) return address of the interrupted code
 };
 
-
-
-// Per-CPU state
-struct cpu {
-  uchar id;                    // Local APIC ID; index into cpus[] below
+struct cpu {                   // Per-CPU state
+  uint id;                     // Local APIC ID; index into cpus[] below
   struct context *scheduler;   // swtch() here to enter scheduler
-  volatile uint started;       // Has the CPU started?
+  uint started;                // Has the CPU started?
   int ncli;                    // Depth of pushcli nesting.
   int intena;                  // Were interrupts enabled before pushcli?
-  
-  // Cpu-local storage variables; see below
   struct cpu *cpu;
   struct proc *proc;           // The currently-running process.
 };
 
+#define NCPU 1
 struct cpu cpus[NCPU];
-
 #define curr_cpu (&cpus[0])
 #define curr_proc   (cpus[0].proc)
 
@@ -62,19 +55,19 @@ struct context { //   v--- byte offset in struct context
 
 enum procstate { UNUSED=0, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-// Per-process state - 56 bytes - allocate 64, which is 0x40
-// Eight entry ptable needs 512 bytes, which is hex 0x200
-// #define PROC_SIZE 64
+// #define PROC_SIZE 64 : it is 52 bytes, but we allocate 0x40 (64)
 struct proc {              //   v--- byte offset in struct proc
-  uint sz;                 // ( 0) Size of process memory (bytes)
-  pde_t* pgdir;            // ( 4) Page table
-  char *kstack;            // ( 8) Bottom of kernel stack for this process
-  enum procstate state;    // (12) Process state
-  volatile int pid;        // (16) Process ID
-  struct proc *parent;     // (20) Parent process
-  struct trapframe *tf;    // (24) Trap frame for current syscall
-  struct context *context; // (28) swtch() here to run process
-  void *chan;              // (32) If non-zero, sleeping on chan
-  int killed;              // (36) If non-zero, have been killed
-  char name[16];           // (40) Process name (debugging)
+  int pid;                 // ( 0) Process ID
+  enum procstate state;    // ( 4) Process state
+  uint startaddr           // ( 8) Start address of code
+  uint sz;                 // (12) Size of process memory (bytes)
+  char *ustack;            // (16) Bottom of user stack for this process
+  char *kstack;            // (20) Bottom of kernel stack for this process
+  struct context *context; // (24) swtch() here to run process
+  struct trapframe *tf;    // (28) Trap frame for current syscall
+  struct proc *parent;     // (32) Parent process
+  void *chan;              // (36) If non-zero, sleeping on chan
+  int killed;              // (40) If non-zero, have been killed
+  pde_t* pgdir;            // (44) Page table (currently not used)
+  char name[16];           // (48) Process name (debugging)
 };

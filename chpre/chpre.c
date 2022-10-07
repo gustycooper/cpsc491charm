@@ -68,23 +68,28 @@ int tokenize(char *line, int def) {
         }
     }
     num_toks = ti;
-    printf("end tokenize\n");
     char *same = "NOT";
-    for (int i = 0; i < ti; i++) {
-        printf("toks[%d]: ", i);
-        print_tok(toks[i]);
-        same = "SAME";
+    if (comments) {
+        printf("end tokenize\n");
+        for (int i = 0; i < ti; i++) {
+            printf("toks[%d]: ", i);
+            print_tok(toks[i]);
+            same = "SAME";
+        }
     }
     if (def && toks[0].tt == id && toks[1].tt == l_paren && toks[2].tt == id && toks[3].tt == r_paren) {
         defines[num_defines].define = strdup(toks[0].value);
         defines[num_defines].param = strdup(toks[2].value);
         defines[num_defines].actparam = strdup(toks[2].value);
         defines[num_defines].substring = strdup(substring);
-        printf("// %s: %s\n", same, line);
-        printf("// #def str: \"%s\"", defines[num_defines].define);
-        printf(" param: \"%s\"", defines[num_defines].param);
-        printf(" sub str: \"%s\"", defines[num_defines].substring);
-        printf("\n");
+        printf("// %s\n", line);
+        if (comments) {
+            printf("// %s: %s\n", same, line);
+            printf("// #def str: \"%s\"", defines[num_defines].define);
+            printf(" param: \"%s\"", defines[num_defines].param);
+            printf(" sub str: \"%s\"", defines[num_defines].substring);
+            printf("\n");
+        }
         num_defines++;
         return 1;
     }

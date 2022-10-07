@@ -221,6 +221,17 @@ int do_cmd(int argc, char **cmdargv) {
         }
     } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 't') {
             printres("Total Steps: %d", total_steps);
+    } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 'o') {
+            int tbp = breakpoint1;
+            breakpoint1 = get_reg(PC) + 4;
+            while (1) {
+                finished = step_n(100);
+                if (finished)
+                    break;
+            }
+            step_results(finished);
+            pipeline();
+            breakpoint1 = tbp;
     } else if (cmdargv[0][0] == 's') {
         if (argc == 2) { // format is s num
             int steps = number(cmdargv[1]);

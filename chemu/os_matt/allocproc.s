@@ -23,6 +23,8 @@
 #define CONTEXT_LR 36
 #define GUSTY 100
 #define COLETTA 8
+#define psh(A) str A, [sp, -4]!
+#define pop(A) ldr A, [sp], 4
 
 .text 0x200
 // ptable, kstack, and ustack are sequential blocks
@@ -52,3 +54,7 @@ str r1, [r3, CONTEXT_PC]    // str to p->context->pc
 mva r1, trapret
 str r1, [r3, CONTEXT_LR]    // str p->context->lr
 mov pc, lr
+str r3, [sp, -4]!           // save kstack on stack
+psh(r3)
+ldr r0, [sp], 4             // retrieve addr of kstack from stack
+pop(r3)
