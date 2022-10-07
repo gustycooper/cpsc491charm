@@ -385,17 +385,21 @@ int do_cmd(int argc, char **cmdargv) {
           if (ps_pos > 8 || ps_pos < 1) {
             printres("%s", "invalid process pid");
           } else {
-            proc_addr = table_addr + ((ps_pos - 1) * 0x0080);
-            proc_state_addr = proc_addr;
-            proc_name_addr = proc_addr + (16 * 0x0004);
+            proc_addr = table_addr + ((ps_pos - 1) * 0x0040);
+            proc_state_addr = proc_addr + 4;
+            proc_name_addr = proc_addr + (12 * 0x0004);
 
             system_bus(proc_state_addr, &state, READ);
             pid = ps_pos;
             // grabs proc name, two characters at a time, from memory
+            int j = 0;
             for (int i = 0; i < 4; i++) {
               system_bus(proc_name_addr + (i * 0x0004), &two_chars, READ);
-              proc_name[i*2] = (two_chars & 0x0000ff00) >> 8;
-              proc_name[(i*2)+1] = two_chars & 0x000000ff;
+              proc_name[j+0] = two_chars & 0xff000000 >> 24;
+              proc_name[j+1] = two_chars & 0x00ff0000 >> 16;
+              proc_name[j+2] = two_chars & 0x0000ff00 >> 8;
+              proc_name[j+3] = two_chars & 0x000000ff >> 0;
+              j = j + 4;
             }
             printres("%3s %16s %5s", "PID", "Name", "State");
             printres("%3u %16s %1u", pid, (char*)proc_name, state);
@@ -405,7 +409,7 @@ int do_cmd(int argc, char **cmdargv) {
           bool found = false;
           for (int i = 0; i < 8; i++) {
               proc_addr = table_addr + (i * 0x0080);
-              proc_name_addr = proc_addr + (16 * 0x0004);
+              proc_name_addr = proc_addr + (12 * 0x0004);
 
               // grabs proc name, two characters at a time, from memory
               for (int i = 0; i < 4; i++) {
@@ -415,8 +419,8 @@ int do_cmd(int argc, char **cmdargv) {
               }
 
               if (strcmp(cmdargv[1], (char*)proc_name) == 0) {
-                proc_state_addr = proc_addr;
-                proc_pid_addr = proc_addr + 0x0004;
+                proc_state_addr = proc_addr + 4;
+                proc_pid_addr = proc_addr;
                 system_bus(proc_state_addr, &state, READ);
                 system_bus(proc_pid_addr, &pid, READ);
 
@@ -436,10 +440,10 @@ int do_cmd(int argc, char **cmdargv) {
               for (int j = 0; j < 8; j++) {
                   proc_name[j] = 0x00000000;
               }
-              proc_addr = table_addr + (i * 0x0080);
-              proc_state_addr = proc_addr;
-              proc_pid_addr = proc_addr + 0x0004;
-              proc_name_addr = proc_addr + (16 * 0x0004);
+              proc_addr = table_addr + (i * 0x0040);
+              proc_state_addr = proc_addr + 4;
+              proc_pid_addr = proc_addr;
+              proc_name_addr = proc_addr + (12 * 0x0004);
 
               system_bus(proc_state_addr, &state, READ);
               system_bus(proc_pid_addr, &pid, READ);
