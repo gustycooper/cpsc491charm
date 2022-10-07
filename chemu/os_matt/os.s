@@ -91,6 +91,8 @@ mva pc, do_tmr // branch to tmr rupt handler
 // process 6 0xf040
 // process 7 0xf080
 // process 8 0xf0c0
+.data 0xf100
+.label ptable_end
 
 // kstack's are 256 bytes each, starting at 0xc000
 // from 0xc000 to 0xc800
@@ -102,7 +104,7 @@ mva pc, do_tmr // branch to tmr rupt handler
 .data 0x06000
 .label ustack
 0
-.label forkret 0
+//.label forkret 0
 // struct proc*
 // pointer to current process running
 .data 0xdf00
@@ -111,7 +113,7 @@ ptable
 
 .data 0xdf04
 .label sched_context
-0xdf08  // points to mem for sched_context
+0xdf50  // points to mem for sched_context
 0       // r4
 0       // r5
 0       // r6
@@ -218,15 +220,17 @@ mva sp, os_stack
 mkd r2, sp        // initialize kr13
 mkd r5, sp        // initialize ir13
 mov r0, 0
-mva r1, 0x1234
+mva r1, 0x0200
 mva r2, 0xef30
 blr allocproc
 mov r0, 1
-mva r1, 0x5678
+mva r1, 0x0400
 mva r2, 0xef30
 blr allocproc
 blr schedule
 
+.label forkret
+mov r15, r14      // returns to trapret()
 
 // Handler is using appropriate sp?
 // do_ker does not have to save r0-r3 because is is a function call?
@@ -267,6 +271,7 @@ str r0,  [sp, -4]!
 mov r0, sp         // argument to trap(struct trapframe *tf)
 blr trap
 
+// TODO: Something is wrong with the trap frame offset; it's trying to push r15 too early
 // trapret is used in allocproc(). lr = trapret
 .label trapret
 // What is in r13 when we get to here?
@@ -274,7 +279,7 @@ blr trap
 //mov r0, sp // save sp in case it is changed to sp_usr after the following LDMFD instruction */
 //ldmfd r0, {r13}^ /* restore user mode sp */
 ldr r0,  [sp], 4 // restore user mode sp from trapframe
-mov sp, r0       // restore sp
+//mov sp, r0       // restore sp
 ldr r0,  [sp], 4
 ldr r1,  [sp], 4
 ldr r2,  [sp], 4
@@ -288,7 +293,8 @@ ldr r9,  [sp], 4
 ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
-ldr r13, [sp], 4
+//ldr r13, [sp], 4
+ldr r14, [sp], 0 // temporary junk
 ldr r14, [sp], 4
 ldr lr,  [sp], 4 // pop kpsr from trapframe
 // kpsr or ipsr?
@@ -378,6 +384,8 @@ mov pc, lr  // subs pc,lr,#0
 // };
 
 .label swtch
+ldr sp, [r0]
+
 str lr,  [sp, -4]! // save return address, lr has return address
 str lr,  [sp, -4]! // save lr
 str r12, [sp, -4]! // save r12 through r4
@@ -391,7 +399,7 @@ str r5,  [sp, -4]!
 str r4,  [sp, -4]!
 
 // switch stacks
-str sp, [r0]      // lookie here: puts address into curr_proc->context
+//str sp, [r0]      // lookie here: puts address into curr_proc->context
 mov sp, r1
 
 // load new callee-save registers
@@ -405,8 +413,9 @@ ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
 ldr lr,  [sp], 4  // restore lr
-ldr pc,  [sp], 4  // restore pc
-
+//ldr pc,  [sp], 4  // restore pc
+ldr r0, [sp], 4  // restore pc
+mov r15, r0
 
 // r0 has addres of trap frame
 .label trap
@@ -454,39 +463,57 @@ blr swtch         // switch to scheduler's context
 ldr lr,  [sp], 4
 mov pc, lr
 
+#define PROC_SIZE 64
+#define KSTACK_SIZE 256
+#define USTACK_SIZE 256
+#define TF_SIZE 80
+#define TF_USP 0
+#define CONTEXT_SIZE 44
+#define PROC_STATE 4
+#define PROC_STARTADDR 8
+#define PROC_USTACK 16
+#define PROC_KSTACK 20
+#define PROC_CONTEXT 24
+#define PROC_NAME 48
+#define PROC_TF 28
+#define CONTEXT_PC 40
+#define CONTEXT_LR 36
+#define TF_PC 76
 
 .label schedule
 // sub sp, sp, []
 // str lr, [sp, []]
 // don't forget the first sched
 .label for_loop_outer
-//mva r0, schedcontext  // temporary; scheduler stack is current at 0x6000
-ldr sp, [r0, 36]
+//mva r0, schedcontext        // temporary; scheduler stack is current at 0x6000
+//ldr sp, [r0, 36]
+sub sp, sp, 4                 // allocate stack space for struct proc* p
 mva r0, ptable
-str r0, [sp, 0]       // p = &ptable
+str r0, [sp, 0]               // p = &ptable
 .label for_loop_inner
 ldr r0, [sp, 0]
-cmp r0, 0xf300      // check if at end of ptable
-bge for_loop_outer    // if so, move back to start of ptable
-ldr r1, [r0, 0]
-cmp r1, 2             // check if process is RUNNABLE
+mva r1, ptable_end
+cmp r0, r1                    // check if at end of ptable
+bge for_loop_outer            // if so, move back to start of ptable
+ldr r1, [r0, PROC_STATE]
+cmp r1, 2                     // check if process is RUNNABLE
 bne inner_incr
-ldr r0, curr_proc     // change old curr_proc state to RUNNABLE
+ldr r0, curr_proc             // change old curr_proc state to RUNNABLE
 mov r1, 2
-str r1, [r0, 0]
-ldr r0, [sp, 0]       // put p into r0
+str r1, [r0, PROC_STATE]
+ldr r0, [sp, 0]               // put p into r0
 str r0, curr_proc
 // switchuvm - later
-mov r1, 3             // change new curr_proc state to RUNNING
+mov r1, 3                     // change new curr_proc state to RUNNING
 str r1, [r0, 0]
 // call swtch
-mva r0, 0xdf04        // &sched_context
+mva r0, 0xdf04                // &sched_context
 ldr r1, curr_proc
-ldr r1, [r1, 12]      // curr_proc->context
+ldr r1, [r1, PROC_CONTEXT]              // curr_proc->context
 blr swtch
 .label inner_incr
 ldr r0, [sp, 0]
-add r0, r0, 0x80
+add r0, r0, PROC_SIZE
 str r0, [sp, 0]
 bal for_loop_inner
 .label end
@@ -504,25 +531,12 @@ bal strcpyloop     // keep copying
 mov r0, r3         // return dest str address
 mov r15, r14       // return
 
-#define PROC_SIZE 64
-#define KSTACK_SIZE 256
-#define USTACK_SIZE 256
-#define TF_SIZE 80
-#define TF_USP 0
-#define CONTEXT_SIZE 48
-#define PROC_STARTADDR 8
-#define PROC_USTACK 16
-#define PROC_KSTACK 20
-#define PROC_CONTEXT 24
-#define PROC_NAME 48
-#define PROC_TF 28
-#define CONTEXT_PC 44
-#define CONTEXT_LR 36
 
 // ptable, kstack, and ustack are sequential blocks
 // r0 has index to allocate in ptable, kstack, ustack
 // r1 has start address of proc (already loaded)
 // r2 has address of proc's name (string)
+// TODO: initialize pid, state, sz, parent, chan, killed, pgtbl during allocproc
 .label allocproc
 str r14, [sp, -4]!          // save lr on stack
 str r2, [sp, -4]!           // save proc's name addr on stack
@@ -534,26 +548,32 @@ mul r1, r0, KSTACK_SIZE     // mul by sizeof kstack frame
 mva r3, kstack
 add r3, r3, r1              // r3 has address of kstack to use
 add r3, r3, KSTACK_SIZE     // stacks grow backwards, r3 has addr of bottom of kstack
-str r3, [sp, -4]!           // save kstack on stack
+str r3, [r2, PROC_KSTACK]   // str to p->kstack
+sub r3, r3, TF_SIZE         // sub sizeof trapframe, r3 has addr of trapframe
+str r3, [r2, PROC_TF]       // str to p->tf
+ldr r1, [sp, 0]             // retrieve start addr from stack
+str r1, [r3, TF_PC]         // store start addr in tf->pc
+sub r3, r3, CONTEXT_SIZE    // sub sizeof context, r3 has addr of context
+str r3, [r2, PROC_CONTEXT]  // str to p->context
 mul r1, r0, USTACK_SIZE     // mul by sizeof ustack
 mva r3, ustack
 add r3, r3, r1              // r3 has address of ustack to use
 add r0, r3, USTACK_SIZE     // stacks grow backwards, r0 has addr of bottom of ustack
-sub r3, r3, TF_SIZE         // sub sizeof trapframe, r3 has addr of trapframe
-str r3, [r2, PROC_TF]       // str to p->tf
-sub r3, r3, CONTEXT_SIZE    // sub sizeof context, r3 has addr of context
-str r3, [r2, PROC_CONTEXT]  // str to p->context
 str r0, [r2, PROC_USTACK]   // str to p->ustack
-ldr r0, [sp], 4             // retrieve addr of kstack from stack
-str r0, [r2, PROC_KSTACK]   // str to p->kstack
 ldr r0, [sp], 4             // retrieve proc's start addr from stack
 str r0, [r2, PROC_STARTADDR]   // str to p->startaddr
-ldr r1, [sp], 4             // retrieve proc's name from stack
-add r0, r2, PROC_NAME       // address p->name to r0
-blr strcpy
+//ldr r1, [sp], 4             // retrieve proc's name from stack
+//add r0, r2, PROC_NAME       // address p->name to r0
+//blr strcpy
 mva r1, forkret
+ldr r3, [r2, PROC_CONTEXT]  // retrieves context addr from proc
 str r1, [r3, CONTEXT_PC]    // str to p->context->pc
 mva r1, trapret
 str r1, [r3, CONTEXT_LR]    // str p->context->lr
+
+ldr r1, [sp], 4             // retrieve proc's name from stack
+add r0, r2, PROC_NAME       // address p->name to r0
+blr strcpy
+
 ldr lr, [sp], 4             // retrieve lr from stack
 mov pc, lr
