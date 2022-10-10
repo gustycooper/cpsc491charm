@@ -421,7 +421,10 @@ enum stepret step() {
         }
         if (mem_access_error)
             return MEMERROR;
-        pc += 4;
+        if (d->rd == PC && control == READ)
+            pc = registers[d->rd];
+        else
+            pc += 4;
         break;
       case ADD_RD_RM_RN: case ADD_RD_RM_IMM:; // arilog ins - 5 is add r1,r2,r3 - 6 is add r1,r2,8
         int op2;

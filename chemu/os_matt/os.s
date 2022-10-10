@@ -225,7 +225,7 @@ mva r2, 0xef30
 blr allocproc
 mov r0, 1
 mva r1, 0x0400
-mva r2, 0xef30
+mva r2, 0xef70
 blr allocproc
 blr schedule
 
@@ -299,9 +299,9 @@ ldr r14, [sp], 4
 ldr lr,  [sp], 4 // pop kpsr from trapframe
 // kpsr or ipsr?
 mkd r1, lr       // mks kpsr, lr
-ldr lr,  [sp, 4] // pop pc from trapframe
+ldr pc,  [sp, 4] // pop pc from trapframe
 // change mode???
-mov pc, lr  // subs pc,lr,#0
+
 
 // cpsr is in ipsr
 // return addr is in ir14
@@ -413,9 +413,9 @@ ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
 ldr lr,  [sp], 4  // restore lr
-//ldr pc,  [sp], 4  // restore pc
-ldr r0, [sp], 4  // restore pc
-mov r15, r0
+ldr pc,  [sp], 4  // restore pc
+//ldr r0, [sp], 4  // restore pc
+//mov r15, r0
 
 // r0 has addres of trap frame
 .label trap
