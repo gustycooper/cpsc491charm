@@ -1,3 +1,20 @@
+#define PROC_SIZE 64
+#define KSTACK_SIZE 256
+#define USTACK_SIZE 256
+#define TF_SIZE 80
+#define TF_USP 0
+#define CONTEXT_SIZE 64
+#define PROC_STATE 4
+#define PROC_STARTADDR 8
+#define PROC_USTACK 16
+#define PROC_KSTACK 20
+#define PROC_CONTEXT 24
+#define PROC_NAME 48
+#define PROC_TF 28
+#define CONTEXT_LR 56
+#define CONTEXT_PC 60
+#define TF_PC 76
+
 // Matt's charm os
 // r13 set to 0x5000
 // TODO - verify address of OS stack
@@ -114,6 +131,10 @@ ptable
 .data 0xdf04
 .label sched_context
 0xdf50  // points to mem for sched_context
+0       // r0
+0       // r1
+0       // r2
+0       // r3
 0       // r4
 0       // r5
 0       // r6
@@ -219,12 +240,14 @@ str r1, [r0, 4]
 mva sp, os_stack
 mkd r2, sp        // initialize kr13
 mkd r5, sp        // initialize ir13
+mva r0, sched_context
+add r0, r0, CONTEXT_SIZE
 mov r0, 0
-mva r1, 0x0200
+mva r1, 0x0300
 mva r2, 0xef30
 blr allocproc
 mov r0, 1
-mva r1, 0x0400
+mva r1, 0x0500
 mva r2, 0xef70
 blr allocproc
 blr schedule
@@ -294,12 +317,16 @@ ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
 //ldr r13, [sp], 4
-ldr r14, [sp], 0 // temporary junk
+ldr r14, [sp], 4 // skip r13 because we are using it
 ldr r14, [sp], 4
+mkd r10, r14     // put lr in kr10 so we can get it later
+add sp, sp, 4    // skip the trapno
+ldr lr,  [sp], 4 // pop cpsr from trapframe
+//mkd r0, lr       // mks cpsr, lr <-- This resets OS bit. TODO
 ldr lr,  [sp], 4 // pop kpsr from trapframe
-// kpsr or ipsr?
 mkd r1, lr       // mks kpsr, lr
-ldr pc,  [sp, 4] // pop pc from trapframe
+mks r14, r10     // get lr from kr10
+ldr pc,  [sp], 4 // pop pc from trapframe
 // change mode???
 
 
@@ -378,16 +405,17 @@ mov pc, lr  // subs pc,lr,#0
 // r1 has context *  - switching to this context
 // r14 has return address
 // struct context {
-//   uint r4; uint r5; uint r6; uint r7; uint r8;
-//   uint r9; uint r10; uint r11; uint r12;
-//   uint lr; uint pc;
+//   uint r0, uint r1, uint r2, uint r3, uint r4; uint r5; uint r6; uint r7; uint r8;
+//   uint r9; uint r10; uint r11; uint r12; uint r13, uint lr; uint pc;
 // };
+// Note: r0, r1, and r13 are done to have 16*4 bytes in the context
 
 .label swtch
 ldr sp, [r0]
 
 str lr,  [sp, -4]! // save return address, lr has return address
 str lr,  [sp, -4]! // save lr
+str r13, [sp, -4]!
 str r12, [sp, -4]! // save r12 through r4
 str r11, [sp, -4]!
 str r10, [sp, -4]!
@@ -397,13 +425,21 @@ str r7,  [sp, -4]!
 str r6,  [sp, -4]!
 str r5,  [sp, -4]!
 str r4,  [sp, -4]!
+str r3,  [sp, -4]!
+str r2,  [sp, -4]!
+str r1,  [sp, -4]!
+str r0,  [sp, -4]!
 
 // switch stacks
 //str sp, [r0]      // lookie here: puts address into curr_proc->context
 mov sp, r1
 
 // load new callee-save registers
-ldr r4,  [sp], 4  // restore r4 through r12
+ldr r0,  [sp], 4  // restore r0 through r15
+ldr r1,  [sp], 4
+ldr r2,  [sp], 4
+ldr r3,  [sp], 4
+ldr r4,  [sp], 4
 ldr r5,  [sp], 4
 ldr r6,  [sp], 4
 ldr r7,  [sp], 4
@@ -412,6 +448,7 @@ ldr r9,  [sp], 4
 ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
+ldr lr,  [sp], 4  // skip loading r13 because we are using it
 ldr lr,  [sp], 4  // restore lr
 ldr pc,  [sp], 4  // restore pc
 //ldr r0, [sp], 4  // restore pc
@@ -462,23 +499,6 @@ ldr r1, sched_context  // mov address of scheduler context to r0
 blr swtch         // switch to scheduler's context
 ldr lr,  [sp], 4
 mov pc, lr
-
-#define PROC_SIZE 64
-#define KSTACK_SIZE 256
-#define USTACK_SIZE 256
-#define TF_SIZE 80
-#define TF_USP 0
-#define CONTEXT_SIZE 44
-#define PROC_STATE 4
-#define PROC_STARTADDR 8
-#define PROC_USTACK 16
-#define PROC_KSTACK 20
-#define PROC_CONTEXT 24
-#define PROC_NAME 48
-#define PROC_TF 28
-#define CONTEXT_PC 40
-#define CONTEXT_LR 36
-#define TF_PC 76
 
 .label schedule
 // sub sp, sp, []
