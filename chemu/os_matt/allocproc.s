@@ -58,3 +58,5 @@ str r3, [sp, -4]!           // save kstack on stack
 psh(r3)
 ldr r0, [sp], 4             // retrieve addr of kstack from stack
 pop(r3)
+rfi 0
+rfi 1

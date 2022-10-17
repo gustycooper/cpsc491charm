@@ -57,6 +57,11 @@ int rupt;          // base address of interrupt vector table
 // return the pc value of the rupt handler
 int interrupt(enum rupttype rt) {
     int tcpsr = cpsr, tr13 = registers[13], ruptvector;
+    int prevmode = 0x00000000;       // assume mode is user
+    if (bit_test(cpsr, K))
+        prevmode = 0x00100000;       // bits 20-23 are 1
+    else if (bit_test(cpsr, K))
+        prevmode = 0x00200000;       // bits 20-23 are 2
     if (rt == KERNEL) {
         cpsr = kregs[KPSR];          // swap cpsr and kpsr
         kregs[KPSR] = tcpsr;
@@ -64,7 +69,7 @@ int interrupt(enum rupttype rt) {
         kregs[KR13] = tr13;
         kregs[KR14] = registers[PC]; // save pc in kr14
         ruptvector = rupt;
-        cpsr = 0x04000002; // kernel mode, os loaded
+        cpsr = 0x04000002 | prevmode; // kernel mode, os loaded | prev mode
     }
     else {
         cpsr = kregs[IPSR];
@@ -73,10 +78,10 @@ int interrupt(enum rupttype rt) {
         kregs[IR13] = tr13;          // swap r13 and kr13
         kregs[IR14] = registers[PC]; // save pc in ir14
         ruptvector = rupt + 4;
-        cpsr = 0x02000002; // interrupt mode, os loaded
+        cpsr = 0x02000002 | prevmode; // interrupt mode, os loaded
     }
-    kregs[CPSR] = cpsr;          // update duplicate copy of cpsr
-    registers[PC] = ruptvector;  // execute instr at ruptvector
+    kregs[CPSR] = cpsr;              // update duplicate copy of cpsr
+    registers[PC] = ruptvector;      // execute instr at ruptvector
     return ruptvector;
 }
 /******************************************************************
@@ -724,13 +729,16 @@ enum stepret step() {
            case RFI: // return from interrupt
                // must be done in kernel/interrupt mode with the OS loaded
                if (!bit_test(cpsr, U) && bit_test(cpsr, OS)) {
-                   if (bit_test(cpsr, K)) {
+                   int prevmode = cpsr & 0x00f00000 >> 24; // Maybe os.s examines prevmode TODO
+                   if (d->immediate20 == 0) {  // rfi 0 - return from interrupt kernel rupt
                        cpsr = kregs[KPSR];
-                       pc = kregs[KR13];
+                       registers[13] = kregs[KR13];
+                       pc = kregs[KR14];
                    }
-                   else {
+                   else {                      // rfi 1 - return from interrupt tmr rupt
                        cpsr = kregs[IPSR];
-                       pc = kregs[IR13];
+                       registers[13] = kregs[IR13];
+                       pc = kregs[IR14];
                    }
                }
                else {

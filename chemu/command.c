@@ -435,8 +435,15 @@ int do_cmd(int argc, char **cmdargv) {
             }
             //printres("%3s %16s %5s", "PID", "Name", "State");
             //printres("%3u %16s %1u", pid, (char*)proc_name, state);
+            char state_str[5];
+            if (state == 2)
+                strcpy(state_str, "rdy");
+            else if (state == 3)
+                strcpy(state_str, "run");
+            else
+                strcpy(state_str, "oth");
             printres("%3s %16s %5s %10s %10s", "PID", "Name", "State", "U-Stack", "K-Stack");
-            printres("%3u %16s %1u %10x %10x", pid, (char*)proc_name, state, ustack, kstack);
+            printres("%3u %16s %s %10x %10x", pid, (char*)proc_name, state_str, ustack, kstack);
             printres("%3s %16s %10s %10s", "PID", "Name", "Context", "Trap Frame");
             printres("%3u %16s %10x %10x", pid, (char*)proc_name, context, trapframe);
           }
@@ -474,8 +481,15 @@ int do_cmd(int argc, char **cmdargv) {
                 system_bus(proc_context_addr, &context, READ);
                 system_bus(proc_trapframe_addr, &trapframe, READ);
 
+                char state_str[5];
+                if (state == 2)
+                    strcpy(state_str, "rdy");
+                else if (state == 3)
+                    strcpy(state_str, "run");
+                else
+                    strcpy(state_str, "oth");
                 printres("%3s %16s %5s %10s %10s", "PID", "Name", "State", "U-Stack", "K-Stack");
-                printres("%3u %16s %1u %10x %10x", pid, (char*)proc_name, state, ustack, kstack);
+                printres("%3u %16s %s %10x %10x", pid, (char*)proc_name, state_str, ustack, kstack);
                 printres("%3s %16s %10s %10s", "PID", "Name", "Context", "Trap Frame");
                 printres("%3u %16s %10x %10x", pid, (char*)proc_name, context, trapframe);
                 found = true;

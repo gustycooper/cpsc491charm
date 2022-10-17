@@ -14,6 +14,8 @@
 #define CONTEXT_LR 56
 #define CONTEXT_PC 60
 #define TF_PC 76
+#define RUNNING 3
+#define READY 2
 
 // Matt's charm os
 // r13 set to 0x5000
@@ -128,6 +130,8 @@ mva pc, do_tmr // branch to tmr rupt handler
 .label curr_proc
 ptable
 
+// context for schedule() function
+// swtch switches between schedule-proc and proc-schedule
 .data 0xdf04
 .label sched_context
 0xdf50  // points to mem for sched_context
@@ -317,15 +321,18 @@ ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
 //ldr r13, [sp], 4
-ldr r14, [sp], 4 // skip r13 because we are using it
+ldr r14, [sp], 4 // retrieve user mode sp from stack
+mkd r5, r14      // put user mode sp into ir13
 ldr r14, [sp], 4
 mkd r10, r14     // put lr in kr10 so we can get it later
 add sp, sp, 4    // skip the trapno
 ldr lr,  [sp], 4 // pop cpsr from trapframe
+mkd r11, r14     // put cpsr in kr11 so we can get it later
 //mkd r0, lr       // mks cpsr, lr <-- This resets OS bit. TODO
 ldr lr,  [sp], 4 // pop kpsr from trapframe
 mkd r1, lr       // mks kpsr, lr
 mks r14, r10     // get lr from kr10
+mkd r0, r11      // mks cpsr, r11 <-- This resets OS bit. TODO
 ldr pc,  [sp], 4 // pop pc from trapframe
 // change mode???
 
@@ -335,47 +342,52 @@ ldr pc,  [sp], 4 // pop pc from trapframe
 // user mode sp is in ir13
 .label do_tmr
 mkd r10, r0        // mov r0 into kr10, save r0 so we can use it
-mks r0,  r6        // mks r0, ir14 // ret addr
-str r0,  [sp, -4]!
-mks r0,  r4        // mks r0, ipsr // user cpsr
-str r0,  [sp, -4]!
-mks r0,  r4        // mks r0, ipsr // user cpsr
-str r0,  [sp, -4]!
+mks r0,  r6        // mks r0, ir14 // r0 gets return address
+str r0,  [sp, -4]! // push return address
+mks r0,  r4        // mks r0, ipsr // r0 gets ipsr
+str r0,  [sp, -4]! // push ipsr
+mks r0,  r0        // mks r0, cpsr // r0 gets cpsr
+str r0,  [sp, -4]! // push cpsr
 mov r0,  #0x80
-str r0,  [sp, -4]!
+str r0,  [sp, -4]! // push opcode for timer rupt
 // TODO Future - disable interrupts
 // TODO Future - on page fault, retry instruction
 // save regs on trapframe
-str r14, [sp, -4]!
-str r13, [sp, -4]!
-str r12, [sp, -4]!
-str r11, [sp, -4]!
-str r10, [sp, -4]!
-str r9,  [sp, -4]!
-str r8,  [sp, -4]!
-str r7,  [sp, -4]!
-str r6,  [sp, -4]!
-str r5,  [sp, -4]!
-str r4,  [sp, -4]!
-str r3,  [sp, -4]!
-str r2,  [sp, -4]!
-str r1,  [sp, -4]!
+str r14, [sp, -4]! // push r14
+str r13, [sp, -4]! // push r13
+str r12, [sp, -4]! // push r12
+str r11, [sp, -4]! // push r11
+str r10, [sp, -4]! // push r10
+str r9,  [sp, -4]! // push r9
+str r8,  [sp, -4]! // push r8
+str r7,  [sp, -4]! // push r7
+str r6,  [sp, -4]! // push r6
+str r5,  [sp, -4]! // push r5
+str r4,  [sp, -4]! // push r4
+str r3,  [sp, -4]! // push r3
+str r2,  [sp, -4]! // push r2
+str r1,  [sp, -4]! // push r1
 mks r0,  r10       // restore r0 from kr10
-str r0,  [sp, -4]!
-mks r0,  r5        // mks r0, ir13 // user sp
-str r0,  [sp, -4]!
+str r0,  [sp, -4]! // push r0
+mks r0,  r5        // mks r0, ir13 // r0 gets user mode sp
+str r0,  [sp, -4]! // push user mode sp
 mov r0, sp         // argument to trap(struct trapframe *tf)
 blr trap
 
 // I AM HERE - return from blr trap
 // Somehow r1 indicates return to user vs returning to kernel
 mov r0, sp
-add r0, r0, #76
+add r0, r0, #76 // Make r0 point to stack entry for cpsr (umode status reg)
+// TODO: Verify 76 is the correct number.
+// In Arm, the bottom four bits of cpsr are the prevmode. 
+// In Charm, cpsr bits 20-23 are prevmode and a 0 is user mode
 //LDMIA r0, {r1} // load r1 from the stack, r0 has the stack address
+ldr r1, [r0, 0]  // get umode cpsr from stack
 mov r2, r1
-and r2, r2, #0xf
-cmp r2, #0
+and r2, r2, #0x00f00000 // mask off the prev mode bits
+cmp r2, #0              // prev mode == 0 is user mode
 beq backtouser
+// At this point we are returning to scheduler
 //msr cpsr, r1
 add sp, sp, #4
 //LDMFD sp, {r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12}
@@ -387,17 +399,32 @@ add sp, sp, #16
 .label backtouser
 mov r0, sp // save sp in case it is changed to sp_usr after the following LDMFD instruction */
 //LDMFD r0, {r13}^ // restore user mode sp
+// HERE
 mov r1, r1  // three nops after LDMFD
 mov r1, r1
 mov r1, r1
 mov sp, r0  // restore sp
 add sp, sp, #4
 //LDMIA sp, {r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12}
+ldr r0, [sp], 4  // pop r0
+ldr r1, [sp], 4  // pop r1
+ldr r2, [sp], 4  // pop r2
+ldr r3, [sp], 4  // pop r3
+ldr r4, [sp], 4  // pop r4
+ldr r5, [sp], 4  // pop r5
+ldr r6, [sp], 4  // pop r6
+ldr r7, [sp], 4  // pop r7
+ldr r8, [sp], 4  // pop r8
+ldr r9, [sp], 4  // pop r9
+ldr r10, [sp], 4 // pop r10
+ldr r10, [sp], 4 // pop r11
+ldr r10, [sp], 4 // pop r12
 add sp, sp, #72
 //pop {lr}
 //msr spsr, lr
 //pop {lr}
 mov pc, lr  // subs pc,lr,#0
+rfi 0
 
 // sched calls swtch from an interrupt.
 // scheduler calls swtch from kernel mode.
@@ -467,8 +494,8 @@ mov pc, lr        // return for now. Later - call os_api
 ldr r1, curr_proc
 cmp r1, 0
 beq no_curr_proc
-ldr r2, [r1, 32]  // 32 is offset of curr_proc->state
-cmp r2, 4         // 4 is number for running
+ldr r2, [r1, PROC_STATE] // put curr_proc->state in r2
+cmp r2, RUNNING          // ensure curr_proc is running
 bne ret_from_trap
 blr yield
 .label no_curr_proc
@@ -525,7 +552,7 @@ ldr r0, [sp, 0]               // put p into r0
 str r0, curr_proc
 // switchuvm - later
 mov r1, 3                     // change new curr_proc state to RUNNING
-str r1, [r0, 0]
+str r1, [r0, PROC_STATE]
 // call swtch
 mva r0, 0xdf04                // &sched_context
 ldr r1, curr_proc
