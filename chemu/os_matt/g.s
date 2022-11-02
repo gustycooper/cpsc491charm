@@ -1,3 +1,23 @@
+// #define PROC_SIZE 64
+// #define KSTACK_SIZE 256
+// #define USTACK_SIZE 256
+// #define TF_SIZE 80
+// #define TF_USP 0
+// #define TF_CPSR 68
+// #define TF_PC 76
+// #define CONTEXT_SIZE 64
+// #define PROC_STATE 4
+// #define PROC_STARTADDR 8
+// #define PROC_USTACK 16
+// #define PROC_KSTACK 20
+// #define PROC_CONTEXT 24
+// #define PROC_NAME 48
+// #define PROC_TF 28
+// #define CONTEXT_LR 56
+// #define CONTEXT_PC 60
+// #define RUNNING 3
+// #define READY 2
+
 // Matt's charm os
 // r13 set to 0x5000
 // TODO - verify address of OS stack
@@ -19,7 +39,7 @@ mva pc, do_tmr // branch to tmr rupt handler
 //      UNUSED -> 0
 //      EMBRYO -> 1
 //      RUNNABLE -> 2
-//      RUNNING -> 3
+//      3 -> 3
 //      SLEEPING -> 4
 //    uint startaddr
 //    uint size in bytes
@@ -111,9 +131,15 @@ mva pc, do_tmr // branch to tmr rupt handler
 .label curr_proc
 ptable
 
+// context for schedule() function
+// swtch switches between schedule-proc and proc-schedule
 .data 0xdf04
 .label sched_context
-0xdf50  // points to mem for sched_context
+0xdf44  // points to mem for sched_context
+0       // r0
+0       // r1
+0       // r2
+0       // r3
 0       // r4
 0       // r5
 0       // r6
@@ -219,13 +245,15 @@ str r1, [r0, 4]
 mva sp, os_stack
 mkd r2, sp        // initialize kr13
 mkd r5, sp        // initialize ir13
+mva r0, sched_context
+add r0, r0, 64
 mov r0, 0
-mva r1, 0x0200
+mva r1, 0x0300
 mva r2, 0xef30
 blr allocproc
 mov r0, 1
-mva r1, 0x0400
-mva r2, 0xef30
+mva r1, 0x0500
+mva r2, 0xef70
 blr allocproc
 blr schedule
 
@@ -271,6 +299,7 @@ str r0,  [sp, -4]!
 mov r0, sp         // argument to trap(struct trapframe *tf)
 blr trap
 
+// TODO: Something is wrong with the trap frame offset; it's trying to push r15 too early
 // trapret is used in allocproc(). lr = trapret
 .label trapret
 // What is in r13 when we get to here?
@@ -293,61 +322,77 @@ ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
 //ldr r13, [sp], 4
-ldr r14, [sp], 0 // temporary junk
+ldr r14, [sp], 4 // retrieve user mode sp from stack
+mkd r5, r14      // put user mode sp into ir13
 ldr r14, [sp], 4
+mkd r10, r14     // put lr in kr10 so we can get it later
+add sp, sp, 4    // skip the trapno
+ldr lr,  [sp], 4 // pop cpsr from trapframe
+mkd r11, r14     // put cpsr in kr11 so we can get it later
+//mkd r0, lr       // mks cpsr, lr <-- This resets OS bit. TODO
 ldr lr,  [sp], 4 // pop kpsr from trapframe
-// kpsr or ipsr?
 mkd r1, lr       // mks kpsr, lr
-ldr lr,  [sp, 4] // pop pc from trapframe
+
+mks r14, r11     // get cpsr from kr11 into r14
+mkd r0, r14      // mkd cpsr, r14 <-- resets OS bit
+
+mks r14, r10     // get lr from kr10
+//mkd r0, r11      // mks cpsr, r11 <-- This resets OS bit. TODO HMMMM
+ldr pc,  [sp], 4 // pop pc from trapframe
 // change mode???
-mov pc, lr  // subs pc,lr,#0
+
 
 // cpsr is in ipsr
 // return addr is in ir14
 // user mode sp is in ir13
 .label do_tmr
 mkd r10, r0        // mov r0 into kr10, save r0 so we can use it
-mks r0,  r6        // mks r0, ir14 // ret addr
-str r0,  [sp, -4]!
-mks r0,  r4        // mks r0, ipsr // user cpsr
-str r0,  [sp, -4]!
-mks r0,  r4        // mks r0, ipsr // user cpsr
-str r0,  [sp, -4]!
+mks r0,  r6        // mks r0, ir14 // r0 gets return address
+str r0,  [sp, -4]! // push return address
+mks r0,  r4        // mks r0, ipsr // r0 gets ipsr
+str r0,  [sp, -4]! // push ipsr
+mks r0,  r0        // mks r0, cpsr // r0 gets cpsr
+str r0,  [sp, -4]! // push cpsr
 mov r0,  #0x80
-str r0,  [sp, -4]!
+str r0,  [sp, -4]! // push opcode for timer rupt
 // TODO Future - disable interrupts
 // TODO Future - on page fault, retry instruction
 // save regs on trapframe
-str r14, [sp, -4]!
-str r13, [sp, -4]!
-str r12, [sp, -4]!
-str r11, [sp, -4]!
-str r10, [sp, -4]!
-str r9,  [sp, -4]!
-str r8,  [sp, -4]!
-str r7,  [sp, -4]!
-str r6,  [sp, -4]!
-str r5,  [sp, -4]!
-str r4,  [sp, -4]!
-str r3,  [sp, -4]!
-str r2,  [sp, -4]!
-str r1,  [sp, -4]!
+str r14, [sp, -4]! // push r14
+str r13, [sp, -4]! // push r13
+str r12, [sp, -4]! // push r12
+str r11, [sp, -4]! // push r11
+str r10, [sp, -4]! // push r10
+str r9,  [sp, -4]! // push r9
+str r8,  [sp, -4]! // push r8
+str r7,  [sp, -4]! // push r7
+str r6,  [sp, -4]! // push r6
+str r5,  [sp, -4]! // push r5
+str r4,  [sp, -4]! // push r4
+str r3,  [sp, -4]! // push r3
+str r2,  [sp, -4]! // push r2
+str r1,  [sp, -4]! // push r1
 mks r0,  r10       // restore r0 from kr10
-str r0,  [sp, -4]!
-mks r0,  r5        // mks r0, ir13 // user sp
-str r0,  [sp, -4]!
+str r0,  [sp, -4]! // push r0
+mks r0,  r5        // mks r0, ir13 // r0 gets user mode sp
+str r0,  [sp, -4]! // push user mode sp
 mov r0, sp         // argument to trap(struct trapframe *tf)
 blr trap
 
 // I AM HERE - return from blr trap
 // Somehow r1 indicates return to user vs returning to kernel
 mov r0, sp
-add r0, r0, #76
+add r0, r0, #76 // Make r0 point to stack entry for cpsr (umode status reg)
+// TODO: Verify 76 is the correct number.
+// In Arm, the bottom four bits of cpsr are the prevmode. 
+// In Charm, cpsr bits 20-23 are prevmode and a 0 is user mode
 //LDMIA r0, {r1} // load r1 from the stack, r0 has the stack address
+ldr r1, [r0, 0]  // get umode cpsr from stack
 mov r2, r1
-and r2, r2, #0xf
-cmp r2, #0
+and r2, r2, #0x00f00000 // mask off the prev mode bits
+cmp r2, #0              // prev mode == 0 is user mode
 beq backtouser
+// At this point we are returning to scheduler
 //msr cpsr, r1
 add sp, sp, #4
 //LDMFD sp, {r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12}
@@ -359,17 +404,32 @@ add sp, sp, #16
 .label backtouser
 mov r0, sp // save sp in case it is changed to sp_usr after the following LDMFD instruction */
 //LDMFD r0, {r13}^ // restore user mode sp
+// HERE
 mov r1, r1  // three nops after LDMFD
 mov r1, r1
 mov r1, r1
 mov sp, r0  // restore sp
 add sp, sp, #4
 //LDMIA sp, {r0,r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12}
+ldr r0, [sp], 4  // pop r0
+ldr r1, [sp], 4  // pop r1
+ldr r2, [sp], 4  // pop r2
+ldr r3, [sp], 4  // pop r3
+ldr r4, [sp], 4  // pop r4
+ldr r5, [sp], 4  // pop r5
+ldr r6, [sp], 4  // pop r6
+ldr r7, [sp], 4  // pop r7
+ldr r8, [sp], 4  // pop r8
+ldr r9, [sp], 4  // pop r9
+ldr r10, [sp], 4 // pop r10
+ldr r10, [sp], 4 // pop r11
+ldr r10, [sp], 4 // pop r12
 add sp, sp, #72
 //pop {lr}
 //msr spsr, lr
 //pop {lr}
 mov pc, lr  // subs pc,lr,#0
+rfi 0
 
 // sched calls swtch from an interrupt.
 // scheduler calls swtch from kernel mode.
@@ -377,16 +437,17 @@ mov pc, lr  // subs pc,lr,#0
 // r1 has context *  - switching to this context
 // r14 has return address
 // struct context {
-//   uint r4; uint r5; uint r6; uint r7; uint r8;
-//   uint r9; uint r10; uint r11; uint r12;
-//   uint lr; uint pc;
+//   uint r0, uint r1, uint r2, uint r3, uint r4; uint r5; uint r6; uint r7; uint r8;
+//   uint r9; uint r10; uint r11; uint r12; uint r13, uint lr; uint pc;
 // };
+// Note: r0, r1, and r13 are done to have 16*4 bytes in the context
 
 .label swtch
 ldr sp, [r0]
 
 str lr,  [sp, -4]! // save return address, lr has return address
 str lr,  [sp, -4]! // save lr
+str r13, [sp, -4]!
 str r12, [sp, -4]! // save r12 through r4
 str r11, [sp, -4]!
 str r10, [sp, -4]!
@@ -396,13 +457,21 @@ str r7,  [sp, -4]!
 str r6,  [sp, -4]!
 str r5,  [sp, -4]!
 str r4,  [sp, -4]!
+str r3,  [sp, -4]!
+str r2,  [sp, -4]!
+str r1,  [sp, -4]!
+str r0,  [sp, -4]!
 
 // switch stacks
 //str sp, [r0]      // lookie here: puts address into curr_proc->context
 mov sp, r1
 
 // load new callee-save registers
-ldr r4,  [sp], 4  // restore r4 through r12
+ldr r0,  [sp], 4  // restore r0 through r15
+ldr r1,  [sp], 4
+ldr r2,  [sp], 4
+ldr r3,  [sp], 4
+ldr r4,  [sp], 4
 ldr r5,  [sp], 4
 ldr r6,  [sp], 4
 ldr r7,  [sp], 4
@@ -411,10 +480,11 @@ ldr r9,  [sp], 4
 ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
+ldr lr,  [sp], 4  // skip loading r13 because we are using it
 ldr lr,  [sp], 4  // restore lr
-//ldr pc,  [sp], 4  // restore pc
-ldr r0, [sp], 4  // restore pc
-mov r15, r0
+ldr pc,  [sp], 4  // restore pc
+//ldr r0, [sp], 4  // restore pc
+//mov r15, r0
 
 // r0 has addres of trap frame
 .label trap
@@ -429,8 +499,8 @@ mov pc, lr        // return for now. Later - call os_api
 ldr r1, curr_proc
 cmp r1, 0
 beq no_curr_proc
-ldr r2, [r1, 32]  // 32 is offset of curr_proc->state
-cmp r2, 4         // 4 is number for running
+ldr r2, [r1, 4] // put curr_proc->state in r2
+cmp r2, 3          // ensure curr_proc is running
 bne ret_from_trap
 blr yield
 .label no_curr_proc
@@ -462,23 +532,6 @@ blr swtch         // switch to scheduler's context
 ldr lr,  [sp], 4
 mov pc, lr
 
-// #define PROC_SIZE 64
-// #define KSTACK_SIZE 256
-// #define USTACK_SIZE 256
-// #define TF_SIZE 80
-// #define TF_USP 0
-// #define CONTEXT_SIZE 44
-// #define PROC_STATE 4
-// #define PROC_STARTADDR 8
-// #define PROC_USTACK 16
-// #define PROC_KSTACK 20
-// #define PROC_CONTEXT 24
-// #define PROC_NAME 48
-// #define PROC_TF 28
-// #define CONTEXT_PC 40
-// #define CONTEXT_LR 36
-// #define TF_PC 76
-
 .label schedule
 // sub sp, sp, []
 // str lr, [sp, []]
@@ -503,10 +556,10 @@ str r1, [r0, 4]
 ldr r0, [sp, 0]               // put p into r0
 str r0, curr_proc
 // switchuvm - later
-mov r1, 3                     // change new curr_proc state to RUNNING
-str r1, [r0, 0]
+mov r1, 3                     // change new curr_proc state to 3
+str r1, [r0, 4]
 // call swtch
-mva r0, 0xdf04                // &sched_context
+mva r0, sched_context                // &sched_context
 ldr r1, curr_proc
 ldr r1, [r1, 24]              // curr_proc->context
 blr swtch
@@ -552,7 +605,11 @@ sub r3, r3, 80         // sub sizeof trapframe, r3 has addr of trapframe
 str r3, [r2, 28]       // str to p->tf
 ldr r1, [sp, 0]             // retrieve start addr from stack
 str r1, [r3, 76]         // store start addr in tf->pc
-sub r3, r3, 44    // sub sizeof context, r3 has addr of context
+
+mov r1, 2                   // initialize cpsr
+str r1, [r3, 68]       // store cpsr in tf-cpsr
+
+sub r3, r3, 64    // sub sizeof context, r3 has addr of context
 str r3, [r2, 24]  // str to p->context
 mul r1, r0, 256     // mul by sizeof ustack
 mva r3, ustack
@@ -566,9 +623,9 @@ str r0, [r2, 8]   // str to p->startaddr
 //blr strcpy
 mva r1, forkret
 ldr r3, [r2, 24]  // retrieves context addr from proc
-str r1, [r3, 40]    // str to p->context->pc
+str r1, [r3, 60]    // str to p->context->pc
 mva r1, trapret
-str r1, [r3, 36]    // str p->context->lr
+str r1, [r3, 56]    // str p->context->lr
 
 ldr r1, [sp], 4             // retrieve proc's name from stack
 add r0, r2, 48       // address p->name to r0

@@ -3,6 +3,8 @@
 #define USTACK_SIZE 256
 #define TF_SIZE 80
 #define TF_USP 0
+#define TF_CPSR 68
+#define TF_PC 76
 #define CONTEXT_SIZE 64
 #define PROC_STATE 4
 #define PROC_STARTADDR 8
@@ -13,7 +15,6 @@
 #define PROC_TF 28
 #define CONTEXT_LR 56
 #define CONTEXT_PC 60
-#define TF_PC 76
 #define RUNNING 3
 #define READY 2
 
@@ -134,7 +135,7 @@ ptable
 // swtch switches between schedule-proc and proc-schedule
 .data 0xdf04
 .label sched_context
-0xdf50  // points to mem for sched_context
+0xdf44  // points to mem for sched_context
 0       // r0
 0       // r1
 0       // r2
@@ -331,8 +332,12 @@ mkd r11, r14     // put cpsr in kr11 so we can get it later
 //mkd r0, lr       // mks cpsr, lr <-- This resets OS bit. TODO
 ldr lr,  [sp], 4 // pop kpsr from trapframe
 mkd r1, lr       // mks kpsr, lr
+
+mks r14, r11     // get cpsr from kr11 into r14
+mkd r0, r14      // mkd cpsr, r14 <-- resets OS bit
+
 mks r14, r10     // get lr from kr10
-mkd r0, r11      // mks cpsr, r11 <-- This resets OS bit. TODO
+//mkd r0, r11      // mks cpsr, r11 <-- This resets OS bit. TODO HMMMM
 ldr pc,  [sp], 4 // pop pc from trapframe
 // change mode???
 
@@ -554,7 +559,7 @@ str r0, curr_proc
 mov r1, 3                     // change new curr_proc state to RUNNING
 str r1, [r0, PROC_STATE]
 // call swtch
-mva r0, 0xdf04                // &sched_context
+mva r0, sched_context                // &sched_context
 ldr r1, curr_proc
 ldr r1, [r1, PROC_CONTEXT]              // curr_proc->context
 blr swtch
@@ -600,6 +605,10 @@ sub r3, r3, TF_SIZE         // sub sizeof trapframe, r3 has addr of trapframe
 str r3, [r2, PROC_TF]       // str to p->tf
 ldr r1, [sp, 0]             // retrieve start addr from stack
 str r1, [r3, TF_PC]         // store start addr in tf->pc
+
+mov r1, 2                   // initialize cpsr
+str r1, [r3, TF_CPSR]       // store cpsr in tf-cpsr
+
 sub r3, r3, CONTEXT_SIZE    // sub sizeof context, r3 has addr of context
 str r3, [r2, PROC_CONTEXT]  // str to p->context
 mul r1, r0, USTACK_SIZE     // mul by sizeof ustack

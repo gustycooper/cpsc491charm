@@ -60,7 +60,7 @@ int interrupt(enum rupttype rt) {
     int prevmode = 0x00000000;       // assume mode is user
     if (bit_test(cpsr, K))
         prevmode = 0x00100000;       // bits 20-23 are 1
-    else if (bit_test(cpsr, K))
+    else if (bit_test(cpsr, I))
         prevmode = 0x00200000;       // bits 20-23 are 2
     if (rt == KERNEL) {
         cpsr = kregs[KPSR];          // swap cpsr and kpsr

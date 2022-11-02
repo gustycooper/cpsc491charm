@@ -6,7 +6,7 @@
 #define V 28
 #define U 27  // set is user mode
 #define K 26  // set is kernel mode via ker
-#define I 26  // set is interrupt mode via timer
+#define I 25  // set is interrupt mode via timer
 #define OS 1  // set is OS loaded
 // Define registers
 #define SR 13
