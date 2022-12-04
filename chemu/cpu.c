@@ -730,14 +730,17 @@ enum stepret step() {
                // must be done in kernel/interrupt mode with the OS loaded
                if (!bit_test(cpsr, U) && bit_test(cpsr, OS)) {
                    int prevmode = cpsr & 0x00f00000 >> 24; // Maybe os.s examines prevmode TODO
+                   int tr13 = registers[13];
                    if (d->immediate20 == 0) {  // rfi 0 - return from interrupt kernel rupt
                        cpsr = kregs[KPSR];
                        registers[13] = kregs[KR13];
+                       kregs[KR13] = tr13;
                        pc = kregs[KR14];
                    }
                    else {                      // rfi 1 - return from interrupt tmr rupt
                        cpsr = kregs[IPSR];
                        registers[13] = kregs[IR13];
+                       kregs[IR13] = tr13;
                        pc = kregs[IR14];
                    }
                }

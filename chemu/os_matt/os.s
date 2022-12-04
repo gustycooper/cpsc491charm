@@ -121,7 +121,7 @@ mva pc, do_tmr // branch to tmr rupt handler
 0
 // ustacks are 256 bytes each, starting at 0x6000
 // from 0x6000 to 0x68000
-.data 0x06000
+.data 0x6000
 .label ustack
 0
 //.label forkret 0
@@ -135,7 +135,8 @@ ptable
 // swtch switches between schedule-proc and proc-schedule
 .data 0xdf04
 .label sched_context
-0xdf44  // points to mem for sched_context
+0xdf48  // points to mem for sched_context
+.label context_sched
 0       // r0
 0       // r1
 0       // r2
@@ -255,6 +256,8 @@ mov r0, 1
 mva r1, 0x0500
 mva r2, 0xef70
 blr allocproc
+mva r0, os_stack // stores os stack pointer into ir13
+mkd r5, r0
 blr schedule
 
 .label forkret
@@ -299,7 +302,6 @@ str r0,  [sp, -4]!
 mov r0, sp         // argument to trap(struct trapframe *tf)
 blr trap
 
-// TODO: Something is wrong with the trap frame offset; it's trying to push r15 too early
 // trapret is used in allocproc(). lr = trapret
 .label trapret
 // What is in r13 when we get to here?
@@ -307,8 +309,10 @@ blr trap
 //mov r0, sp // save sp in case it is changed to sp_usr after the following LDMFD instruction */
 //ldmfd r0, {r13}^ /* restore user mode sp */
 ldr r0,  [sp], 4 // restore user mode sp from trapframe
+mkd r5, r0       // put user mode sp into ir13
+
 //mov sp, r0       // restore sp
-ldr r0,  [sp], 4
+ldr r0,  [sp], 4  // TODO: We lose the user mode sp
 ldr r1,  [sp], 4
 ldr r2,  [sp], 4
 ldr r3,  [sp], 4
@@ -322,23 +326,40 @@ ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
 //ldr r13, [sp], 4
-ldr r14, [sp], 4 // retrieve user mode sp from stack
-mkd r5, r14      // put user mode sp into ir13
+
+//ldr r14, [sp], 4 // retrieve user mode sp from stack
+//mkd r5, r14      // put user mode sp into ir13
+
+ldr r14, [sp], 4 // pop r13 from trapframe; do not use
+
 ldr r14, [sp], 4
 mkd r10, r14     // put lr in kr10 so we can get it later
+
 add sp, sp, 4    // skip the trapno
+
 ldr lr,  [sp], 4 // pop cpsr from trapframe
-mkd r11, r14     // put cpsr in kr11 so we can get it later
-//mkd r0, lr       // mks cpsr, lr <-- This resets OS bit. TODO
+mkd r4, r14     // put cpsr in ipsr
+//mkd r0, lr       // mks cpsr, lr <-- This resets OS bit.
+
 ldr lr,  [sp], 4 // pop kpsr from trapframe
 mkd r1, lr       // mks kpsr, lr
 
-mks r14, r11     // get cpsr from kr11 into r14
-mkd r0, r14      // mkd cpsr, r14 <-- resets OS bit
+//mks r14, r11     // get cpsr from kr11 into r14
+//mkd r0, r14      // mkd cpsr, r14 <-- resets OS bit
+
+//mva r14, os_stack // stores os_stack pointer into lr
+//mkd r5, r14       // put lr in ir13 to set up os stack pointer when timer interrupt occurs
+
+ldr r14, [sp], 4  // get pc from stack
+mkd r6, r14       // put pc into ir14
 
 mks r14, r10     // get lr from kr10
-//mkd r0, r11      // mks cpsr, r11 <-- This resets OS bit. TODO HMMMM
-ldr pc,  [sp], 4 // pop pc from trapframe
+//mkd r0, r11      // mks cpsr, r11 <-- This resets OS bit.
+
+rfi 1           // pc <--> ir14, cpsc <--> ipsr, r13 <--> ir13
+
+//ldr pc,  [sp], 4 // pop pc from trapframe
+//mks r15, r5        // load pc from ir13
 // change mode???
 
 
@@ -377,12 +398,13 @@ str r0,  [sp, -4]! // push r0
 mks r0,  r5        // mks r0, ir13 // r0 gets user mode sp
 str r0,  [sp, -4]! // push user mode sp
 mov r0, sp         // argument to trap(struct trapframe *tf)
-blr trap
 
+blr trap           // stores instruction after
+.label this_is_the_bug
 // I AM HERE - return from blr trap
 // Somehow r1 indicates return to user vs returning to kernel
 mov r0, sp
-add r0, r0, #76 // Make r0 point to stack entry for cpsr (umode status reg)
+add r0, r0, TF_CPSR // Make r0 point to stack entry for cpsr (umode status reg)
 // TODO: Verify 76 is the correct number.
 // In Arm, the bottom four bits of cpsr are the prevmode. 
 // In Charm, cpsr bits 20-23 are prevmode and a 0 is user mode
@@ -401,7 +423,7 @@ add sp, sp, #56
 add sp, sp, #16
 //pop {pc}
 
-.label backtouser
+.label backtouser // TODO: gotta figure out what's going wrong here
 mov r0, sp // save sp in case it is changed to sp_usr after the following LDMFD instruction */
 //LDMFD r0, {r13}^ // restore user mode sp
 // HERE
@@ -480,7 +502,7 @@ ldr r9,  [sp], 4
 ldr r10, [sp], 4
 ldr r11, [sp], 4
 ldr r12, [sp], 4
-ldr lr,  [sp], 4  // skip loading r13 because we are using it
+ldr lr,  [sp], 4  // skip r13 since we are using it
 ldr lr,  [sp], 4  // restore lr
 ldr pc,  [sp], 4  // restore pc
 //ldr r0, [sp], 4  // restore pc
@@ -488,12 +510,12 @@ ldr pc,  [sp], 4  // restore pc
 
 // r0 has addres of trap frame
 .label trap
-str lr,  [sp, -4]!
+str lr,  [sp, -4]! // which stack are we storing lr to?
 ldr r1, [r0, 64]  // put trap type (0x40, 0x80) in r1
 cmp r1, 0x40      // 0x4 is system call (ker instr)
 bne tmr_rupt      // timer interrupts
 // see code in trap.c
-mov pc, lr        // return for now. Later - call os_api
+mov pc, lr        // TODO: return for now. Later - call os_api
 .label tmr_rupt
 // check error conditions - see trap.c
 ldr r1, curr_proc
@@ -511,7 +533,7 @@ mov pc, lr
 .label yield
 str lr,  [sp, -4]!
 ldr r0, curr_proc
-mov r1, 4         // 4 is the number for running
+mov r1, READY         // 2 is the number for ready
 str r1, [r0, 32]  // 32 is offset of curr_proc->state
 blr sched
 ldr lr,  [sp], 4
@@ -526,8 +548,8 @@ mov pc, lr
 str lr,  [sp, -4]!
 // Is this correct? curr_proc->context used to be pointer
 ldr r0, curr_proc // addr of curr_proc to r0
-add r0, r0, 12    // put address of curr_proc->context in r0, Update 12 to be correct
-ldr r1, sched_context  // mov address of scheduler context to r0
+add r0, r0, PROC_CONTEXT // put address of curr_proc->context in r0, Update 12 to be correct
+mva r1, context_sched  // mov address of scheduler context to r0
 blr swtch         // switch to scheduler's context
 ldr lr,  [sp], 4
 mov pc, lr
@@ -548,19 +570,29 @@ mva r1, ptable_end
 cmp r0, r1                    // check if at end of ptable
 bge for_loop_outer            // if so, move back to start of ptable
 ldr r1, [r0, PROC_STATE]
-cmp r1, 2                     // check if process is RUNNABLE
+cmp r1, READY                     // check if process is RUNNABLE
 bne inner_incr
-ldr r0, curr_proc             // change old curr_proc state to RUNNABLE
-mov r1, 2
+ldr r0, curr_proc             // change old curr_proc state to READY
+mov r1, READY
 str r1, [r0, PROC_STATE]
+
+.label bobby
 ldr r0, [sp, 0]               // put p into r0
 str r0, curr_proc
 // switchuvm - later
-mov r1, 3                     // change new curr_proc state to RUNNING
+
+//ldr r1, [r0, PROC_KSTACK]     // store curr_proc->kstack into ir13
+//mkd r5, r1
+
+mov r1, RUNNING                     // change new curr_proc state to RUNNING
 str r1, [r0, PROC_STATE]
 // call swtch
 mva r0, sched_context                // &sched_context
 ldr r1, curr_proc
+
+ldr r2, [r1, PROC_KSTACK]           // store curr_proc -> kstack to ir13
+mkd r5, r2                          // for trapret stuff
+
 ldr r1, [r1, PROC_CONTEXT]              // curr_proc->context
 blr swtch
 .label inner_incr
@@ -608,14 +640,20 @@ str r1, [r3, TF_PC]         // store start addr in tf->pc
 
 mov r1, 2                   // initialize cpsr
 str r1, [r3, TF_CPSR]       // store cpsr in tf-cpsr
+str r3, [sp, -4]!
 
 sub r3, r3, CONTEXT_SIZE    // sub sizeof context, r3 has addr of context
 str r3, [r2, PROC_CONTEXT]  // str to p->context
+
 mul r1, r0, USTACK_SIZE     // mul by sizeof ustack
 mva r3, ustack
 add r3, r3, r1              // r3 has address of ustack to use
 add r0, r3, USTACK_SIZE     // stacks grow backwards, r0 has addr of bottom of ustack
-str r0, [r2, PROC_USTACK]   // str to p->ustack
+str r0, [r2, PROC_USTACK]   // str to p->*ustack
+
+ldr r1, [sp], 4             // grab trap frame address from stack
+str r0, [r1, TF_USP]        // str to tf->usp
+
 ldr r0, [sp], 4             // retrieve proc's start addr from stack
 str r0, [r2, PROC_STARTADDR]   // str to p->startaddr
 //ldr r1, [sp], 4             // retrieve proc's name from stack
