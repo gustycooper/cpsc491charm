@@ -1,4 +1,4 @@
-// processes gusty and lauren both do the following
+// processes gusty, lauren, and matt do the following
 // char name_str[] = "gusty";
 // int main() {
 //   char name[8];
@@ -60,7 +60,7 @@ sub sp, sp, 32
 str lr, [sp, 12]
 mov r2, 1
 str r2, [sp, 8] // i = 1
-mva r1, gusty_str
+mva r1, lauren_str
 mov r0, sp
 blr strcpy
 ldr r2, [sp, 8] // i to r2
@@ -71,6 +71,30 @@ add r2, r2, 1
 str r2, [sp, 0] // i++
 bal loop_lauren
 .label end_lauren
+ldr lr, [sp, 4]
+sub sp, sp, 32
+mov r15, r14
+
+.data 0x0600
+.label matt_str
+.string //matt
+.text 0x0700
+.label matt
+sub sp, sp, 32
+str lr, [sp, 12]
+mov r2, 1
+str r2, [sp, 8] // i = 1
+mva r1, matt_str
+mov r0, sp
+blr strcpy
+ldr r2, [sp, 8] // i to r2
+.label loop_matt
+cmp r2, 0
+beq end_matt
+add r2, r2, 1
+str r2, [sp, 0] // i++
+bal loop_matt
+.label end_matt
 ldr lr, [sp, 4]
 sub sp, sp, 32
 mov r15, r14
