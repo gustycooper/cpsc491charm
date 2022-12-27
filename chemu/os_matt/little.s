@@ -14,6 +14,10 @@
 // 08 i's value
 // 0c lr's value
 
+// Define address of yield
+.text 0x9000
+.label yield
+
 .text 0x0100
 .label strcpy
 mov r3, r0         // save dest str address
@@ -43,6 +47,7 @@ ldr r2, [sp, 8] // i to r2
 .label loop_gusty
 cmp r2, 0
 beq end_gusty
+blr yield
 add r2, r2, 1
 str r2, [sp, 0] // i++
 bal loop_gusty

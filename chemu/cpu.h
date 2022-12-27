@@ -37,13 +37,17 @@
 #define IR13 5
 #define IR14 6
 
+// Define steps when to stop potential infinite loop
+#define LOOP_STOP 500
+
 enum stepret {
     ILLEGALINST = -1,
     NORMAL = 0,
     BREAKPOINT = 1,
     BALTOSELF = 2,
     SCANF = 3,
-    MEMERROR = 4
+    MEMERROR = 4,
+    LOOPSTOP = 5
 };
 
 enum rupttype {KERNEL, EXTERNRUPT};
@@ -61,6 +65,7 @@ int step();
 int step_n(int n);
 void step_show_reg();
 void step_show_reg_mem();
+void reset_pipeline();
 void pipeline();
 void show_mem_changed();
 void chemuscanf(char *str);

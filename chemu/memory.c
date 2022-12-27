@@ -74,7 +74,7 @@ int dump_memory(int start_address, int num_bytes) {
     return 0;
 }
 
-// dumb memory words (32-bit quantities) - return values
+// dump memory words (32-bit quantities) - return values
 // 0 - success
 // 1 - memory address bad
 int dump_memory_word(int start_address, int num_words) {
@@ -90,6 +90,20 @@ int dump_memory_word(int start_address, int num_words) {
     }
     return 0;
 }
+
+// dump_raw used by charmweb, from chemupython.c.
+// method_do calls grab_dump_updates calls dump_raw
+// struct memorydump is an uint data[32]
+int last_location = -1;
+struct memorydump dump_raw() {
+    struct memorydump d = { -1 };
+    if (last_location < 0) {
+        return d;
+    }
+    d = *((struct memorydump *) &memory[last_location]);
+    return d; 
+}
+
 
 #define MAX_LINE 100
 static char buf[MAX_LINE];

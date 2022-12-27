@@ -75,7 +75,7 @@ static const char *regwinl4 = "r8 :%08x r9 :%08x r10:%08x r11:%08x";
 static const char *regwinl5 = "r12:%08x r13:%08x r14:%08x r15:%08x";
 static const char *regwinl6 = "cpsr:%08x Z: %d, N: %d, C: %d, V: %d, U: %d, OS: %d";
 static const char *regwinl8 = "%s";
-static const char *regwinl9 = "psr:%08x ksr:%08x k13:%08x k14:%08x";
+static const char *regwinl9 = "ksr:%08x k13:%08x k14:%08x psr:%08x";
 static const char *regwinl10= "isr:%08x i13:%08x i14:%08x  k7:%08x";
 
 #ifdef NCURSES
@@ -86,7 +86,7 @@ void updateregwin(WINDOW *regwin) {
     mvwprintw(regwin, 5, 1, regwinl5, registers[12], registers[13], registers[14], registers[15]);
     mvwprintw(regwin, 6, 1, regwinl6, cpsr, cpsr>>N&1, cpsr>>Z&1, cpsr>>C&1, cpsr>>V&1, cpsr>>U&1, cpsr>>OS&1);
     mvwprintw(regwin, 8, 1, regwinl8, mem_changed);
-    mvwprintw(regwin, 9, 1, regwinl9, kregs[0],  kregs[1],  kregs[2],  kregs[3]);
+    mvwprintw(regwin, 9, 1, regwinl9, kregs[1],  kregs[2],  kregs[3],  kregs[0]);
     mvwprintw(regwin, 10, 1,regwinl10,kregs[4],  kregs[5],  kregs[6],  kregs[7]);
 }
 #else

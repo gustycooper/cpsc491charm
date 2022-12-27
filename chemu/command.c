@@ -13,14 +13,18 @@
 #include "isa.h"
 #include "dict.h"
 
-void printres(char *fmt, ...) __attribute__((format(printf, 1, 2)));
-
-extern int verbose_cpu;
-extern int total_steps;
 /*
  Commands - see documentation for description of commands
  */
 
+void printres(char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+extern int verbose_cpu;
+extern int total_steps;
+extern int loop_stop;
+/*
+ Defines used to access members of OS struct proc.
+ */
 #define PROC_SIZE     64
 #define PROC_PID      0
 #define PROC_STATE    4
@@ -30,6 +34,9 @@ extern int total_steps;
 #define PROC_CONTEXT  24
 #define PROC_TRAP     28
 #define PROC_NAME     48
+#define TF_PC         76
+#define STATE_READY   2
+#define STATE_RUN     3
 
 int ishexdigit(char c) {
    return isdigit(c) || c == 'a' || c == 'b' || c == 'c' || c == 'd' || c == 'e' || c == 'f';
@@ -144,12 +151,28 @@ void step_results(enum stepret finished) {
         system_bus(get_reg(PC), &inst, READ);
         printres("Instruction mem access error: pc: 0x%08x, inst: 0x%08x", get_reg(PC), inst);
     }
+    else if (finished == LOOPSTOP) {
+        int inst; 
+        system_bus(get_reg(PC), &inst, READ);
+        printres("Executed %d instrs: pc: 0x%08x, inst: 0x%08x", loop_stop, get_reg(PC), inst);
+    }
     else if (finished < 0) {
         int inst; 
         system_bus(get_reg(PC), &inst, READ);
         printres("Illegal instruction: pc: 0x%08x, inst: 0x%08x", get_reg(PC), inst);
     }
 
+}
+
+void get_proc_name(int proc_addr, char *proc_name) {
+    int j, k, four_chars;
+    for (j = 0, k = 0; j < 4; j++, k+=4) {
+        system_bus(proc_addr + PROC_NAME + (j * 4), &four_chars, READ);
+        proc_name[k+0] = (four_chars & 0xff000000) >> 24; // byteswap
+        proc_name[k+1] = (four_chars & 0x00ff0000) >> 16;
+        proc_name[k+2] = (four_chars & 0x0000ff00) >> 8;
+        proc_name[k+3] = (four_chars & 0x000000ff) >> 0;
+    }
 }
 
 int do_cmd(int argc, char **cmdargv) {
@@ -186,7 +209,7 @@ int do_cmd(int argc, char **cmdargv) {
                 printres("KR%-3d:%11d (0x%.8x)", reg, get_kreg(reg), get_kreg(reg));
             }
         } else { // print all kregs
-            printres("r0: cpsr, r1: kpsr, r2: kr13, r3: ipsr, r4: ir13");
+            printres("r0:cpsr, r1:kpsr, r2:kr13, r3:kr14, r4:irsr, r5:ir13, r6:ir14");
         }
     } else if (cmdargv[0][0] == 'r') {
         if (argc == 3) { // cmd is r 0 55, modify r0 to be 55
@@ -230,18 +253,31 @@ int do_cmd(int argc, char **cmdargv) {
 #endif
         }
     } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 't') {
-            printres("Total Steps: %d", total_steps);
-    } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 'o') {
-            int tbp = breakpoint1;
-            breakpoint1 = get_reg(PC) + 4;
-            while (1) {
-                finished = step_n(100);
-                if (finished)
-                    break;
+        if (argc == 2) { // format is st num
+            int steps = number(cmdargv[1]);
+            if (steps == -1 || steps > 30000) {
+                printres("%d: %s", steps, "invalid number of steps on st command - 30000 max.");
             }
+            else {
+                loop_stop = steps;
+            }
+        }
+        else {
+            printres("Total Steps: %d", total_steps);
+        }
+    } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 'o') {
+        int tbp = breakpoint1;
+        breakpoint1 = get_reg(PC) + 4;
+        while (1) {
+            finished = step_n(100);
+            if (finished)
+                break;
+        }
+        // Do not print results for a normal step over
+        if (finished != BREAKPOINT || get_reg(PC) != breakpoint1)
             step_results(finished);
-            pipeline();
-            breakpoint1 = tbp;
+        pipeline();
+        breakpoint1 = tbp;
     } else if (cmdargv[0][0] == 's') {
         if (argc == 2) { // format is s num
             int steps = number(cmdargv[1]);
@@ -375,160 +411,72 @@ int do_cmd(int argc, char **cmdargv) {
         pipeline();
       // ps command: prints out info of ptable
     } else if (cmdargv[0][0] == 'p' && cmdargv[0][1] == 's') {
-        int table_addr = dictget("ptable");
-        // check if ptable label exists
-        if (table_addr != -1000001) {
-          int proc_addr;
+        int table_addr = dictget("ptable"); // check if ptable label exists
+        if (table_addr == -1000001) {
+            printres("%s", "cannot find ptable in memory!");
+            return retval;
+        }
+        
+        int proc_addr, pid, state, start, ustack, kstack, context, trapframe, procpc;
+        char proc_name[16] = { 0 };
+        char *state_to_str[] = {"rdy  ", "run  ", "oth  "};
 
-          int proc_pid_addr;
-          int proc_state_addr;
-          int proc_start_addr;
-          int proc_ustack_addr;
-          int proc_kstack_addr;
-          int proc_context_addr;
-          int proc_trapframe_addr;
-          int proc_name_addr;
-
-          int pid;
-          int state;
-          int start;
-          int ustack;
-          int kstack;
-          int context;
-          int trapframe;
-          char proc_name[16] = {0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000};
-          int two_chars;
-
-          if (argc > 1 && cmdargv[1][0] > '0' && cmdargv[1][0] < '9') {
-            // check if user inputted 8 or 9
-            int ps_pos = number(cmdargv[1]);
-            // user tries to read a non-existent process in ptable
-            if (ps_pos > 8 || ps_pos < 1) {
-              printres("%s", "invalid process pid");
-          } else {
-            proc_addr = table_addr + ((ps_pos - 1) * PROC_SIZE);
-            proc_state_addr = proc_addr + PROC_STATE;
-            proc_name_addr = proc_addr + PROC_NAME;
-            proc_start_addr = proc_addr + PROC_START;
-            proc_ustack_addr = proc_addr + PROC_USTACK;
-            proc_kstack_addr = proc_addr + PROC_KSTACK;
-            proc_context_addr = proc_addr + PROC_CONTEXT;
-            proc_trapframe_addr = proc_addr + PROC_TRAP;
-
-            system_bus(proc_state_addr, &state, READ);
-            pid = ps_pos;
-            system_bus(proc_start_addr, &start, READ);
-            system_bus(proc_ustack_addr, &ustack, READ);
-            system_bus(proc_kstack_addr, &kstack, READ);
-            system_bus(proc_context_addr, &context, READ);
-            system_bus(proc_trapframe_addr, &trapframe, READ);
-
-            // grabs proc name, four characters at a time, from memory
-            int j = 0;
-            for (int i = 0; i < 4; i++) {
-              system_bus(proc_name_addr + (i * 0x0004), &two_chars, READ);
-              proc_name[j+0] = (two_chars & 0xff000000) >> 24;
-              proc_name[j+1] = (two_chars & 0x00ff0000) >> 16;
-              proc_name[j+2] = (two_chars & 0x0000ff00) >> 8;
-              proc_name[j+3] = (two_chars & 0x000000ff) >> 0;
-              j = j + 4;
-            }
-            //printres("%3s %16s %5s", "PID", "Name", "State");
-            //printres("%3u %16s %1u", pid, (char*)proc_name, state);
-            char state_str[5];
-            if (state == 2)
-                strcpy(state_str, "rdy");
-            else if (state == 3)
-                strcpy(state_str, "run");
-            else
-                strcpy(state_str, "oth");
-            printres("%3s %16s %5s %10s %10s", "PID", "Name", "State", "U-Stack", "K-Stack");
-            printres("%3u %16s %s %10x %10x", pid, (char*)proc_name, state_str, ustack, kstack);
-            printres("%3s %16s %10s %10s", "PID", "Name", "Context", "Trap Frame");
-            printres("%3u %16s %10x %10x", pid, (char*)proc_name, context, trapframe);
-          }
-        // user argument is a string
-          } else if (argc > 1) {
-          bool found = false;
-          for (int i = 0; i < 8; i++) {
-              proc_addr = table_addr + (i * PROC_SIZE);
-              proc_name_addr = proc_addr + PROC_NAME;
-              proc_start_addr = proc_addr + PROC_START;
-              proc_ustack_addr = proc_addr + PROC_USTACK;
-              proc_kstack_addr = proc_addr + PROC_KSTACK;
-              proc_context_addr = proc_addr + PROC_CONTEXT;
-              proc_trapframe_addr = proc_addr + PROC_TRAP;
-
-              // grabs proc name, four characters at a time, from memory
-              int j = 0;
-              for (int i = 0; i < 4; i++) {
-                system_bus(proc_name_addr + (i * 0x0004), &two_chars, READ);
-                proc_name[j+0] = (two_chars & 0xff000000) >> 24;
-                proc_name[j+1] = (two_chars & 0x00ff0000) >> 16;
-                proc_name[j+2] = (two_chars & 0x0000ff00) >> 8;
-                proc_name[j+3] = (two_chars & 0x000000ff) >> 0;
-                j = j + 4;
-              }
-
-              if (strcmp(cmdargv[1], (char*)proc_name) == 0) {
-                proc_pid_addr = proc_addr;
-                proc_state_addr = proc_addr + PROC_STATE;
-                system_bus(proc_pid_addr, &pid, READ);
-                system_bus(proc_state_addr, &state, READ);
-                system_bus(proc_start_addr, &start, READ);
-                system_bus(proc_ustack_addr, &ustack, READ);
-                system_bus(proc_kstack_addr, &kstack, READ);
-                system_bus(proc_context_addr, &context, READ);
-                system_bus(proc_trapframe_addr, &trapframe, READ);
-
-                char state_str[5];
-                if (state == 2)
-                    strcpy(state_str, "rdy");
-                else if (state == 3)
-                    strcpy(state_str, "run");
-                else
-                    strcpy(state_str, "oth");
-                printres("%3s %16s %5s %10s %10s", "PID", "Name", "State", "U-Stack", "K-Stack");
-                printres("%3u %16s %s %10x %10x", pid, (char*)proc_name, state_str, ustack, kstack);
-                printres("%3s %16s %10s %10s", "PID", "Name", "Context", "Trap Frame");
-                printres("%3u %16s %10x %10x", pid, (char*)proc_name, context, trapframe);
-                found = true;
-                break;
-              }
-          }
-          if (!found) {
-            printres("%s%s", "cannot find process with name: ", cmdargv[1]);
-          }
-        // no additional user argument; print out list of all procs
-          } else {
+        if (argc == 1) { // ps without args, show all with state != 0
             printres("%3s %16s %5s", "PID", "Name", "State");
-            for (int i = 0; i < 2; i++) {
-              for (int j = 0; j < 4; j++) {
-                  proc_name[j] = 0x00000000;
-              }
-              proc_addr = table_addr + (i * PROC_SIZE);
-              proc_state_addr = proc_addr + PROC_STATE;
-              proc_pid_addr = proc_addr;
-              proc_name_addr = proc_addr + PROC_NAME;
-
-              int j = 0;
-              system_bus(proc_state_addr, &state, READ);
-              system_bus(proc_pid_addr, &pid, READ);
-
-              // grabs proc name, four characters at a time, from memory
-              for (int i = 0; i < 4; i++) {
-                system_bus(proc_name_addr + (i * 0x0004), &two_chars, READ);
-                proc_name[j+0] = (two_chars & 0xff000000) >> 24;
-                proc_name[j+1] = (two_chars & 0x00ff0000) >> 16;
-                proc_name[j+2] = (two_chars & 0x0000ff00) >> 8;
-                proc_name[j+3] = (two_chars & 0x000000ff) >> 0;
-                j = j + 4;
-              }
-                printres("%3u %16s %5u", pid, (char*)proc_name, state);
+            for (int i = 0; i < 8; i++) { // currently we have upto 8 procs
+                proc_addr = table_addr + (i * PROC_SIZE);
+                system_bus(proc_addr + PROC_STATE, &state, READ);
+                if (state == 0) // 0 indicates unused proc
+                    continue;
+                else if (state == STATE_READY || state == STATE_RUN) // ready or run
+                    state = state - 2; // adjust to index int state_to_str
+                else
+                    state = 2;         // select "oth" in state_to_str
+                system_bus(proc_addr, &pid, READ);   // pid is first entry in proc in ptable
+                get_proc_name(proc_addr, proc_name); // get proc_name from proc in ptable
+                printres("%3u %16s %s", pid, (char*)proc_name, state_to_str[state]);
             }
-          }
-        } else {
-          printres("%s", "cannot find ptable in memory!");
+        }
+        else { // ps <pid> or ps <pname>
+            int ps_pid = 0;
+            if (argc > 1 && cmdargv[1][0] > '0' && cmdargv[1][0] < '9') // ps <pid>
+                ps_pid = number(cmdargv[1]);
+            bool found = false;
+            for (int i = 0; i < 8; i++) { // currently we have upto 8 procs
+                proc_addr = table_addr + (i * PROC_SIZE);
+                get_proc_name(proc_addr, proc_name); // get proc_name from ptable
+                system_bus(proc_addr, &pid, READ); // pid is first entry in proc
+                if (ps_pid != 0 && pid == ps_pid) // ps <pid>
+                    found = true;
+                else if (strcmp(cmdargv[1], (char *)proc_name) == 0) // ps <name>
+                    found = true;
+                if (found) {
+                    system_bus(proc_addr + PROC_STATE, &state, READ);
+                    system_bus(proc_addr + PROC_START, &start, READ);
+                    system_bus(proc_addr + PROC_USTACK, &ustack, READ);
+                    system_bus(proc_addr + PROC_KSTACK, &kstack, READ);
+                    system_bus(proc_addr + PROC_CONTEXT, &context, READ);
+                    system_bus(proc_addr + PROC_TRAP, &trapframe, READ);
+                    if (state == STATE_RUN)
+                        procpc = get_reg(PC);
+                    else
+                        system_bus(trapframe + TF_PC, &procpc, READ);
+                    if (state == STATE_READY || state == STATE_RUN)
+                        state = state - 2;
+                    else
+                        state = 2;
+                    printres("PID             Name State Ustk Kstk Cont TrFr   PC");
+                    printres("%3u %16s %s %4x %4x %4x %4x %4x", pid, (char*)proc_name, state_to_str[state], ustack, kstack, context, trapframe, procpc);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (ps_pid)
+                    printres("%s%d", "cannot find process with pid: ", ps_pid);
+                else
+                    printres("%s%s", "cannot find process with name: ", cmdargv[1]);
+            }
         }
     } else if (cmdargv[0][0] == 'b') {
         int *bp = &breakpoint0;

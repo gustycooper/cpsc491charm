@@ -18,8 +18,10 @@ void addresult(char *res);
 /******************************************************************
  ***************************   STEPS   ****************************
  ** global total_steps - counts the num of instructions executed **
+ ** global loop_stop - num of steps when to stop looping         **
  ******************************************************************/
 int total_steps = 0;
+int loop_stop = LOOP_STOP;
 
 /******************************************************************
  ***************************  EXECUTE  ****************************
@@ -134,6 +136,18 @@ void pipeline() {
         address += 4;
     }
 }
+/******************************************************************
+ ***********************  Charmweb Function ***********************
+ * @brief Clears the instruction history pipeline.
+ * Called by chemu.reset() via method_reset in chemupython.c
+ ******************************************************************/
+void reset_pipeline() {
+    for (int i = 0; i < INSTHIST; i++) {
+        insthist[i].addr = 0;
+        insthist[i].inst = 0;
+    }
+}
+
 
 /******************************************************************
  ***********************  SETTERS/GETTERS *************************
@@ -729,7 +743,7 @@ enum stepret step() {
            case RFI: // return from interrupt
                // must be done in kernel/interrupt mode with the OS loaded
                if (!bit_test(cpsr, U) && bit_test(cpsr, OS)) {
-                   int prevmode = cpsr & 0x00f00000 >> 24; // Maybe os.s examines prevmode TODO
+                   //int prevmode = cpsr & 0x00f00000 >> 24; // Maybe os.s examines prevmode TODO
                    int tr13 = registers[13];
                    if (d->immediate20 == 0) {  // rfi 0 - return from interrupt kernel rupt
                        cpsr = kregs[KPSR];
@@ -785,6 +799,8 @@ enum stepret step() {
         system_bus(pc, &inst, READ);
         printf("post-step:  cpsr: 0x%08x, pc: 0x%08x, inst: 0x%08x, %s\n", cpsr, registers[PC], inst, disassemble(inst));
     }
+    if ((retval == NORMAL) &&  loop_stop && ((total_steps % loop_stop) == 0))
+        retval = LOOPSTOP;
     return retval;
 }
 
