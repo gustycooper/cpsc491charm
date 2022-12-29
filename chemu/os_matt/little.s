@@ -14,26 +14,25 @@
 // 08 i's value
 // 0c lr's value
 
-// Define address of yield
-.text 0x9000
+// Define OS API adresses
+.text 0xa000
+.label printf
+.text 0xa020
+.label scanf
+.text 0xa040
 .label yield
-
-.text 0x0100
+.text 0xa050
 .label strcpy
-mov r3, r0         // save dest str address
-.label strcpyloop
-ldb r2, [r1], 1    // char from src str
-cmp r2, 0          // see if done
-beq strcpydone     // yes
-stb r2, [r0], 1    // place src str char into dest str
-bal strcpyloop     // keep copying
-.label strcpydone
-mov r0, r3         // return dest str address
-mov r15, r14       // return
 
 .data 0x0200
 .label gusty_str
 .string //gusty
+.label fmt
+.string //gusty: %d, %d
+.label scanfmt
+.string //%d
+.label xvar
+0
 .text 0x0300
 .label gusty
 sub sp, sp, 32
@@ -44,10 +43,27 @@ mva r1, gusty_str
 mov r0, sp
 blr strcpy
 ldr r2, [sp, 8] // i to r2
+mva r1, fmt
+mov r2, 55
+mov r3, 777
+ker 0x11
+mva r0, fmt
+mov r1, 33
+mov r2, 222
+blr printf
+mva r1, fmt
+mov r2, 66
+mov r3, 888
+ker 0x11
+//mva r0, scanfmt
+//mva r1, xvar
+//blr scanf
+.label before_yield
+blr yield
 .label loop_gusty
 cmp r2, 0
 beq end_gusty
-blr yield
+//blr yield
 add r2, r2, 1
 str r2, [sp, 0] // i++
 bal loop_gusty

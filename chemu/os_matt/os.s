@@ -3,6 +3,10 @@
 #define KSTACK_SIZE 256
 #define USTACK_SIZE 256
 #define TF_USP 0
+#define TF_R0 4
+#define TF_R1 8
+#define TF_R2 12
+#define TF_R3 16
 #define TF_TYPE 64
 #define TF_CPSR 68
 #define TF_SPSR 72
@@ -154,37 +158,11 @@ ptable
 0       // r15  60 3c
         //      64 40
 
-// base address of os api, scanf, printf
-// This code executes in kernel mode. It executes ioi
-// This code is entered via ker instr
-.text 0x9000
 // -----------------------------------------------------------------------
-.label yield
-str lr,  [sp, -4]!
-ldr r0, curr_proc
-mov r1, READY                 // 2 is the number for ready
-str r1, [r0, PROC_STATE]      // 32 is offset of curr_proc->state
-blr sched
-ldr lr,  [sp], 4
-mov pc, lr
-
-.label os_api
-cmp r0, #0x10
-beq scanf
-cmp r0, #0x11
-beq printf
-bal done
-.label scanf
-ioi 0x10  // scanf
-bal done
-.label printf
-ioi 0x11  // printf
-.label done
-mov r1, r0
-srg #0x3b
-mov r15, r14
+// OS API - printf, scanf, and yield
 //
-// Address of printf is 0xa000, when called
+// -----------------------------------------------------------------------
+// Address of printf is 0xa000 to 0xa01b, when called
 //  r0 has addr of fmt string
 //  r1 has first % variable, if any
 //  r2 has second % variable, if any
@@ -194,25 +172,47 @@ str r14, [r13, #-4]!         // push lr on stack
 mov r3, r2                   // set regs expected by ker 0x11
 mov r2, r1                  
 mov r1, r0                  
-ker 0x11                     // 0x11 is placed into r0
-                             // user to kernel rupt is generated
+ker 0x11                     // 0x11 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
-//
-// Address of scanf is 0xa050, when called
+// -----------------------------------------------------------------------
+// Address of scanf is 0xa020 to 0xa03b, when called
 //  r0 has addr of fmt string
 //  r1 has first % variable, if any
 //  r2 has second % variable, if any
 // Called in user mode
-.text 0xa050
+.text 0xa020
 str r14, [r13, #-4]!         // push lr on stack
 mov r3, r2                   // set regs expected by ker 0x11
 mov r2, r1                  
 mov r1, r0                  
-ker 0x10                     // 0x10 is placed into r0
-                             // user to kernel rupt is generated
+ker 0x10                     // 0x10 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
+// -----------------------------------------------------------------------
+// Address of yield (for user procs to call) is 0xa040 to 0xa04f
+//  yield does not have any parameters
+// Called in user mode
+.text 0xa040
+str r14, [r13, #-4]!         // push lr on stack
+ker 0x12                     // 0x12 placed into r0, kernel rupt generated
+ldr r14, [r13], #4           // pop lr from stack
+mov r15, r14                 // return
+// -----------------------------------------------------------------------
+// Address of strcpy is 0xa050 to 0xa06f - just a function. Does not issue a ker instr
+.text 0xa050
+.label strcpy
+mov r3, r0                    // save dest str address
+.label strcpyloop
+ldb r2, [r1], 1               // char from src str
+cmp r2, 0                     // see if done
+beq strcpydone                // yes
+stb r2, [r0], 1               // place src str char into dest str
+bal strcpyloop                // keep copying
+.label strcpydone
+mov r0, r3                    // return dest str address
+mov r15, r14                  // return
+
 
 // -----------------------------------------------------------------------
 // os code begins at address 0x8000
@@ -267,13 +267,13 @@ mov r15, r14                 // returns to trapret()
 mkd r10, r0                  // mov r0 into kr10, save r0 so we can use it
 mks r0,  r6                  // mks r0, ir14 // r0 gets return address
 str r0,  [sp, -4]!           // push return address
-mks r0,  r0                  // mks r0, cpsr // r0 gets cpsr, which is ipsr
-str r0,  [sp, -4]!           // push ipsr
-mks r0,  r4                  // mks r0, ipsr // r0 gets ipsr, which is cpsr
+mks r0,  r0                  // mks r0, cpsr // r0 gets cpsr, which is kpsr
+str r0,  [sp, -4]!           // push kpsr
+mks r0,  r1                  // mks r0, kpsr // r0 gets kpsr, which is cpsr
 str r0,  [sp, -4]!           // push cpsr
 mov r0,  #0x40               // 0x40 indicates ker inst rupt
 str r0,  [sp, -4]!           // push opcode for ker inst rupt
-// Future-TODO  - disable interrupts
+// Future-TODO: disable interrupts
                              // save regs on trapframe
 str r14, [sp, -4]!           // push r14
 str r13, [sp, -4]!           // push r13
@@ -291,12 +291,43 @@ str r2,  [sp, -4]!           // push r2
 str r1,  [sp, -4]!           // push r1
 mks r0,  r10                 // restore r0 from kr10
 str r0,  [sp, -4]!           // push r0
-mks r0,  r5                  // mks r0, ir13 // r0 gets user mode sp
+mks r0,  r2                  // mks r0, ir13 // r0 gets user mode sp
 str r0,  [sp, -4]!           // push user mode sp
 mov r0, sp                   // argument to trap(struct trapframe *tf)
 blr trap
+.label do_ker_ret
+// r13 points to top of trap frame
+ldr r0, [sp], 4              // get user mode sp from trapframe into r0
+mkd r2, r0                   // mkd kr13, r0, put user mode sp into kr13
+ldr r0,  [sp], 4             // restore regs from trap frame
+ldr r1,  [sp], 4
+ldr r2,  [sp], 4
+ldr r3,  [sp], 4
+ldr r4,  [sp], 4
+ldr r5,  [sp], 4
+ldr r6,  [sp], 4
+ldr r7,  [sp], 4
+ldr r8,  [sp], 4
+ldr r9,  [sp], 4
+ldr r10, [sp], 4
+ldr r11, [sp], 4
+ldr r12, [sp], 4
+ldr r14, [sp], 4             // pop r13 from trapframe; do not use
+ldr r14, [sp], 4             // pop lr (r14) from trapframe
+mkd r10, r14                 // put lr in kr10 so we can get it later
+add sp, sp, 4                // skip the trapno on the trapframe
+ldr r14, [sp], 4             // pop cpsr from trapframe
+mkd r1, r14                  // mkd kpsr, lr, put cpsr in kpsr
+ldr r14, [sp], 4             // pop kpsr from trapframe
+mkd r0, r14                  // mkd kpsr, lr, put kpsr in cpsr
+ldr r14, [sp], 4             // get tf->pc from stack - pc is not return for ker
+mks r14, r10                 // mks r14, kr10 - get lr from kr10 - lr is return for ker
+mkd r3, r14                  // mkd kr14, r14 - put lr into kr14
+rfi 0                        // pc <--> ir14, cpsr <--> ipsr, r13 <--> ir13
+                            
 
 // trapret is used in allocproc(). lr = trapret
+// TODO: Eventually, move this code to after blr trap in do_tmr
 .label trapret
 // r13 points to top of trap frame
 ldr r0, [sp], 4              // get user mode sp from trapframe into r0
@@ -375,8 +406,8 @@ mks r0,  r4                  // mks r0, ipsr // r0 gets ipsr, which is cpsr
 str r0,  [sp, -4]!           // push cpsr
 mov r0,  #0x80               // 0x80 indicates timer rupt
 str r0,  [sp, -4]!           // push opcode for timer rupt
-// Future-TODO - disable interrupts
-// Future-TODO  - on page fault, retry instruction
+// Future-TODO: disable interrupts
+// Future-TODO: on page fault, retry instruction
                              // save regs on trapframe
 str r14, [sp, -4]!           // push r14
 str r13, [sp, -4]!           // push r13
@@ -416,7 +447,7 @@ cmp r2, #0                   // prev mode == 0 is user mode
 beq backtouser
 // At this point we are returning to scheduler
 // Timer Interrupt while in scheduler
-// TODO - fix this code - may be same as backtouser
+// TODO: fix this code - may be same as backtouser
 .label backtoscheduler
 bal backtoscheduler
 
@@ -508,8 +539,34 @@ str lr,  [sp, -4]!           // which stack are we storing lr to?
 ldr r1, [r0, TF_TYPE]        // put trap type (0x40, 0x80) in r1
 cmp r1, 0x40                 // 0x4 is system call (ker instr)
 bne tmr_rupt                 // timer interrupts
-// see code in trap.c
-mov pc, lr                   // TODO: return for now. Later - call os_api
+// This code is for ker instruction interrupt
+ldr r1, [r0, TF_R0]          // get opcode for ker instruction
+cmp r1, 0x11                 // see if printf, only option for now
+beq do_printf
+cmp r1, 0x10                 // see if scanf
+beq do_scanf
+cmp r1, 0x12                 // see if yield
+beq do_yield
+.label ker_not_supported
+bal ker_not_supported        // TODO: Add yield, scanf
+.label do_printf
+ldr r1, [r0, TF_R1]          // get r1 from tf (r1 has fmt string)
+ldr r2, [r0, TF_R2]          // get r2 from tf (r2 has %1 param, if any)
+ldr r3, [r0, TF_R3]          // get r3 from tf (r3 has %2 param, if any)
+ioi 0x11                     // issue ioi for printf
+ldr lr,  [sp], 4
+mov pc, lr                   // return
+.label do_scanf
+ldr r1, [r0, TF_R1]          // get r1 from tf (r1 has fmt string)
+ldr r2, [r0, TF_R2]          // get r2 from tf (r2 has %1 param, if any)
+ldr r3, [r0, TF_R3]          // get r3 from tf (r3 has %2 param, if any)
+ioi 0x10                     // issue ioi for printf
+ldr lr,  [sp], 4
+mov pc, lr                   // return
+.label do_yield
+blr yield
+ldr lr,  [sp], 4
+mov pc, lr
 .label tmr_rupt
 // check error conditions - see trap.c
 ldr r1, curr_proc
@@ -576,6 +633,7 @@ mva r0, sched_context         // &sched_context GUSTY
 ldr r1, curr_proc
 ldr r2, [r1, PROC_KSTACK]     // store curr_proc->kstack to r2
 mkd r5, r2                    // mkd ir13, r2 - move r2 into ir13 (trapret uses)
+mkd r2, r2                    // mkd kr13, r2 - move r2 into kr13 - used for ker rupt
 ldr r1, [r1, PROC_CONTEXT]    // curr_proc->context
 blr swtch                     // call swtch
 .label inner_incr
@@ -585,19 +643,6 @@ str r0, [sp, 0]
 bal for_loop_inner
 .label end
 bal end
-
-// -----------------------------------------------------------------------
-.label strcpy
-mov r3, r0                    // save dest str address
-.label strcpyloop
-ldb r2, [r1], 1               // char from src str
-cmp r2, 0                     // see if done
-beq strcpydone                // yes
-stb r2, [r0], 1               // place src str char into dest str
-bal strcpyloop                // keep copying
-.label strcpydone
-mov r0, r3                    // return dest str address
-mov r15, r14                  // return
 
 
 // -----------------------------------------------------------------------
@@ -623,7 +668,9 @@ str r3, [r2, PROC_TF]         // str to p->tf
 ldr r1, [sp, 0]               // retrieve start addr from stack
 str r1, [r3, TF_PC]           // store start addr in tf->pc
 
-mov r1, 2                     // initialize cpsr
+mov r1, 8                     // create 0x8000001 in r1
+shf r1, 24
+orr r1, r1, 2                 // initialize cpsr, User Mode, OS Loaded
 str r1, [r3, TF_CPSR]         // store cpsr in tf-cpsr
 str r3, [sp, -4]!             // push4 trapframe address onto stack
 
@@ -653,3 +700,14 @@ blr strcpy
 
 ldr lr, [sp], 4               // pop1 lr (ret addr) from stack
 mov pc, lr
+
+// -----------------------------------------------------------------------
+.label yield
+str lr,  [sp, -4]!
+ldr r0, curr_proc
+mov r1, READY                 // 2 is the number for ready
+str r1, [r0, PROC_STATE]      // 32 is offset of curr_proc->state
+blr sched
+ldr lr,  [sp], 4
+mov pc, lr
+
