@@ -17,11 +17,11 @@
 // Define OS API adresses
 .text 0xa000
 .label printf
-.text 0xa020
+.text 0xa004
 .label scanf
-.text 0xa040
+.text 0xa008
 .label yield
-.text 0xa050
+.text 0xa00c
 .label strcpy
 
 .data 0x0200

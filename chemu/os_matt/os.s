@@ -159,15 +159,20 @@ ptable
         //      64 40
 
 // -----------------------------------------------------------------------
-// OS API - printf, scanf, and yield
+// OS API - printf, scanf, yield, strcpy
 //
+.text 0xa000
+bal dew_printf                // 0xa0000
+bal dew_scanf                 // 0xa0004
+bal dew_yield                 // 0xa0008
+bal dew_strcpy                // 0xa000c
 // -----------------------------------------------------------------------
 // Address of printf is 0xa000 to 0xa01b, when called
 //  r0 has addr of fmt string
 //  r1 has first % variable, if any
 //  r2 has second % variable, if any
 // Called in user mode
-.text 0xa000
+.label dew_printf
 str r14, [r13, #-4]!         // push lr on stack
 mov r3, r2                   // set regs expected by ker 0x11
 mov r2, r1                  
@@ -181,7 +186,7 @@ mov r15, r14                 // return
 //  r1 has first % variable, if any
 //  r2 has second % variable, if any
 // Called in user mode
-.text 0xa020
+.label dew_scanf
 str r14, [r13, #-4]!         // push lr on stack
 mov r3, r2                   // set regs expected by ker 0x11
 mov r2, r1                  
@@ -193,14 +198,14 @@ mov r15, r14                 // return
 // Address of yield (for user procs to call) is 0xa040 to 0xa04f
 //  yield does not have any parameters
 // Called in user mode
-.text 0xa040
+.label dew_yield
 str r14, [r13, #-4]!         // push lr on stack
 ker 0x12                     // 0x12 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
 // -----------------------------------------------------------------------
 // Address of strcpy is 0xa050 to 0xa06f - just a function. Does not issue a ker instr
-.text 0xa050
+.label dew_strcpy
 .label strcpy
 mov r3, r0                    // save dest str address
 .label strcpyloop
@@ -257,8 +262,7 @@ blr schedule
 mov r15, r14                 // returns to trapret()
 
 // -----------------------------------------------------------------------
-// Handler is using appropriate sp?
-// do_ker processes a user mode to kernel mode interrrupt - ker instruction
+// do_ker processes a user mode to kernel mode interrrupt, i.e., ker instruction
 // Charm ker instr will generate this interrupt
 // cpsr is in kpsr
 // return addr is in kr14
@@ -548,7 +552,7 @@ beq do_scanf
 cmp r1, 0x12                 // see if yield
 beq do_yield
 .label ker_not_supported
-bal ker_not_supported        // TODO: Add yield, scanf
+bal ker_not_supported        // TODO: Improve this continuous loop
 .label do_printf
 ldr r1, [r0, TF_R1]          // get r1 from tf (r1 has fmt string)
 ldr r2, [r0, TF_R2]          // get r2 from tf (r2 has %1 param, if any)
@@ -560,7 +564,7 @@ mov pc, lr                   // return
 ldr r1, [r0, TF_R1]          // get r1 from tf (r1 has fmt string)
 ldr r2, [r0, TF_R2]          // get r2 from tf (r2 has %1 param, if any)
 ldr r3, [r0, TF_R3]          // get r3 from tf (r3 has %2 param, if any)
-ioi 0x10                     // issue ioi for printf
+ioi 0x10                     // issue ioi for scanf
 ldr lr,  [sp], 4
 mov pc, lr                   // return
 .label do_yield
