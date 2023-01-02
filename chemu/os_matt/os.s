@@ -20,10 +20,12 @@
 #define PROC_CONTEXT 24
 #define PROC_NAME 48
 #define PROC_TF 28
+#define PROC_CHAN 36
 #define CONTEXT_LR 56
 #define CONTEXT_PC 60
 #define RUNNING 3
 #define READY 2
+#define SLEEP 4
 
 // -----------------------------------------------------------------------
 // Establihs sp for start
@@ -166,8 +168,10 @@ bal dew_printf                // 0xa0000
 bal dew_scanf                 // 0xa0004
 bal dew_yield                 // 0xa0008
 bal dew_strcpy                // 0xa000c
+bal dew_sleep                 // 0xa0010
+bal dew_wake                  // 0xa0014
 // -----------------------------------------------------------------------
-// Address of printf is 0xa000 to 0xa01b, when called
+// printf, when called
 //  r0 has addr of fmt string
 //  r1 has first % variable, if any
 //  r2 has second % variable, if any
@@ -181,7 +185,7 @@ ker 0x11                     // 0x11 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
 // -----------------------------------------------------------------------
-// Address of scanf is 0xa020 to 0xa03b, when called
+// scanf, when called
 //  r0 has addr of fmt string
 //  r1 has first % variable, if any
 //  r2 has second % variable, if any
@@ -195,7 +199,7 @@ ker 0x10                     // 0x10 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
 // -----------------------------------------------------------------------
-// Address of yield (for user procs to call) is 0xa040 to 0xa04f
+// yield (for user procs to call)
 //  yield does not have any parameters
 // Called in user mode
 .label dew_yield
@@ -217,6 +221,24 @@ bal strcpyloop                // keep copying
 .label strcpydone
 mov r0, r3                    // return dest str address
 mov r15, r14                  // return
+// -----------------------------------------------------------------------
+// sleep, when called
+//  r0 has channel on which to sleep
+// Called in user mode
+.label dew_sleep
+str r14, [r13, #-4]!         // push lr on stack
+ker 0x13                     // 0x13 placed into r0, kernel rupt generated
+ldr r14, [r13], #4           // pop lr from stack
+mov r15, r14                 // return
+// -----------------------------------------------------------------------
+// wake, when called
+//  r0 has channel on which to sleep
+// Called in user mode
+.label dew_wake
+str r14, [r13, #-4]!         // push lr on stack
+ker 0x14                     // 0x14 placed into r0, kernel rupt generated
+ldr r14, [r13], #4           // pop lr from stack
+mov r15, r14                 // return
 
 
 // -----------------------------------------------------------------------
@@ -449,11 +471,12 @@ shf r1, 20                   // 0x00f00000 to r1, f is in bits for prev mode
 and r2, r2, r1               // mask off the prev mode bits
 cmp r2, #0                   // prev mode == 0 is user mode
 beq backtouser
-// At this point we are returning to scheduler
-// Timer Interrupt while in scheduler
-// TODO: fix this code - may be same as backtouser
+// At this point return to scheduler due to timer rupt while in scheduler
+// TODO: Check that the stacks are correct 
+//  1. when timer interrupt in scheduler
+//  2. When timer interrupts oscillate between scheduler and procs 
 .label backtoscheduler
-bal backtoscheduler
+//bal backtoscheduler        // This can be used to not return to scheduler
 
 .label backtouser            // Return to user proc
                              // sp points to trapframe of user proc
@@ -551,6 +574,10 @@ cmp r1, 0x10                 // see if scanf
 beq do_scanf
 cmp r1, 0x12                 // see if yield
 beq do_yield
+cmp r1, 0x13                 // see if sleep
+beq do_sleep
+cmp r1, 0x14                 // see if wake
+beq do_wake
 .label ker_not_supported
 bal ker_not_supported        // TODO: Improve this continuous loop
 .label do_printf
@@ -571,6 +598,16 @@ mov pc, lr                   // return
 blr yield
 ldr lr,  [sp], 4
 mov pc, lr
+.label do_sleep
+ldr r0, [r0, TF_R1]          // get r1 from tf (r1 has channel on which to sleep)
+blr sleep
+ldr lr,  [sp], 4
+mov pc, lr
+.label do_wake
+ldr r0, [r0, TF_R1]          // get r1 from tf (r1 has channel on which to wakeup)
+blr wake
+ldr lr,  [sp], 4
+mov pc, lr
 .label tmr_rupt
 // check error conditions - see trap.c
 ldr r1, curr_proc
@@ -587,9 +624,9 @@ mov pc, lr
 
 
 // -----------------------------------------------------------------------
-//  intena = curr_cpu->intena;
-//  swtch(&curr_proc->context, curr_cpu->scheduler);
-//  curr_cpu->intena = intena;
+// When calling swtch: 
+//  r0 is output, has **, addr of where to store addr of prev context switched from
+//  r1 is input, has *, addr of where to store the context switching to
 .label sched
 str lr,  [sp, -4]!
 // curr_proc->context points to top of context, swtch pushes regs using r0
@@ -598,6 +635,7 @@ ldr r0, curr_proc             // addr of curr_proc to r0
 add r0, r0, PROC_CONTEXT      // put address of curr_proc->context in r0
 //mva r1, context_sched       // mov address of scheduler context to r0 GUSTY
 ldr r1, sched_context         // GUSTY
+// Future-TODO: save/restore rupt enables before/after swtch
 blr swtch                     // switch to scheduler's context
 ldr lr,  [sp], 4
 mov pc, lr
@@ -607,10 +645,10 @@ mov pc, lr
 // sub sp, sp, []
 // str lr, [sp, []]
 // don't forget the first sched
-.label for_loop_outer
 //mva r0, schedcontext        // temporary; scheduler stack is current at 0x6000
 //ldr sp, [r0, 36]
 sub sp, sp, 4                 // allocate stack space for struct proc* p
+.label for_loop_outer
 mva r0, ptable
 str r0, [sp, 0]               // p = &ptable
 .label for_loop_inner
@@ -621,9 +659,10 @@ bge for_loop_outer            // if so, move back to start of ptable
 ldr r1, [r0, PROC_STATE]
 cmp r1, READY                 // check if process is RUNNABLE
 bne inner_incr
+// yield changes curr_proc to READY
 ldr r0, curr_proc             // change old curr_proc state to READY
 mov r1, READY
-str r1, [r0, PROC_STATE]
+//str r1, [r0, PROC_STATE]
 
 .label bobby
 ldr r0, [sp, 0]               // put p into r0
@@ -709,9 +748,46 @@ mov pc, lr
 .label yield
 str lr,  [sp, -4]!
 ldr r0, curr_proc
-mov r1, READY                 // 2 is the number for ready
-str r1, [r0, PROC_STATE]      // 32 is offset of curr_proc->state
+mov r1, READY                 // put READY state in r1
+str r1, [r0, PROC_STATE]      // store READY in curr_proc->state
 blr sched
 ldr lr,  [sp], 4
 mov pc, lr
 
+// -----------------------------------------------------------------------
+// r0 has channel on which to sleep
+.label sleep
+str lr,  [sp, -4]!
+ldr r2, curr_proc
+mov r1, SLEEP                 // put SLEEP state in r1
+str r1, [r2, PROC_STATE]      // store SLEEP in curr_proc->state
+str r0, [r2, PROC_CHAN]       // store channel in curr_proc->channel
+blr sched
+ldr lr,  [sp], 4
+mov pc, lr
+
+// -----------------------------------------------------------------------
+// r0 has channel on which to wakeup
+.label wake
+str lr,  [sp, -4]!
+mva r1, ptable                // r1 walks through procs
+mva r2, ptable_end            // r2 is end of ptable
+.label sleep_loop
+cmp r1, r2                    // check if at end of ptable
+bge sleep_done
+ldr r3, [r1, PROC_STATE]      // check if proc's state is sleeping
+cmp r3, SLEEP
+bne sleep_skip                // no, check next proc
+ldr r3, [r1, PROC_CHAN]       // check if sleeping in channel in r0
+cmp r3, r0
+bne sleep_skip                // no, check next proc
+mov r3, READY                 // yes, wakeup - change state to ready
+str r3, [r1, PROC_STATE]
+mov r3, 0
+str r3, [r1, PROC_CHAN]       // zero the channel member of proc
+.label sleep_skip
+add r1, r1, PROC_SIZE
+bal sleep_loop
+.label sleep_done
+ldr lr,  [sp], 4
+mov pc, lr

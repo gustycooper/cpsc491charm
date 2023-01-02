@@ -23,12 +23,16 @@
 .label yield
 .text 0xa00c
 .label strcpy
+.text 0xa010
+.label sleep
+.text 0xa014
+.label wake
 
 .data 0x0200
 .label gusty_str
 .string //gusty
 .label fmt
-.string //gusty: %d, %d
+.string //%s: %d
 .label scanfmt
 .string //%d
 .label xvar
@@ -44,20 +48,22 @@ mov r0, sp
 blr strcpy
 ldr r2, [sp, 8] // i to r2
 mva r1, fmt
-mov r2, 55
+mva r2, gusty_str
 mov r3, 777
 ker 0x11
 mva r0, fmt
-mov r1, 33
+mva r1, gusty_str
 mov r2, 222
 blr printf
 mva r1, fmt
-mov r2, 66
+mva r2, gusty_str
 mov r3, 888
 ker 0x11
-//mva r0, scanfmt
+//mva r0, scanfmt // uncomment to read int into xvar
 //mva r1, xvar
 //blr scanf
+mov r0, 0x55      // sleep on channel 0x55
+blr sleep
 .label before_yield
 blr yield
 .label loop_gusty
@@ -85,6 +91,12 @@ mva r1, lauren_str
 mov r0, sp
 blr strcpy
 ldr r2, [sp, 8] // i to r2
+mva r0, fmt
+mva r1, lauren_str
+mov r2, 333
+blr printf
+mov r0, 0x55
+blr wake
 .label loop_lauren
 cmp r2, 0
 beq end_lauren
