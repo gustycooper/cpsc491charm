@@ -307,6 +307,11 @@ void chemuioi(int op2) {
             doscanf = 1;
         }
    }
+   else if (op2 == 0x12) { // load file
+       char temp[80];
+       strncpy(temp, &memory[registers[0]], 80);
+       load_memory(temp);
+   }
 }
 
 /******************************************************************

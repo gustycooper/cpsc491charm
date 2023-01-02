@@ -27,6 +27,10 @@
 .label sleep
 .text 0xa014
 .label wake
+.text 0xa018
+.label fork
+.text 0xa01c
+.label exec
 
 .data 0x0200
 .label gusty_str
@@ -37,6 +41,8 @@
 .string //%d
 .label xvar
 0
+.label loadme
+.string //loadme.o
 .text 0x0300
 .label gusty
 sub sp, sp, 32
@@ -62,6 +68,9 @@ ker 0x11
 //mva r0, scanfmt // uncomment to read int into xvar
 //mva r1, xvar
 //blr scanf
+mva r0, loadme
+blr exec          // exec loads a .o - does not start a proc
+.label after_exec
 mov r0, 0x55      // sleep on channel 0x55
 blr sleep
 .label before_yield

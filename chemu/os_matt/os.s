@@ -164,12 +164,14 @@ ptable
 // OS API - printf, scanf, yield, strcpy
 //
 .text 0xa000
-bal dew_printf                // 0xa0000
-bal dew_scanf                 // 0xa0004
-bal dew_yield                 // 0xa0008
-bal dew_strcpy                // 0xa000c
-bal dew_sleep                 // 0xa0010
-bal dew_wake                  // 0xa0014
+bal dew_printf                // 0xa000
+bal dew_scanf                 // 0xa004
+bal dew_yield                 // 0xa008
+bal dew_strcpy                // 0xa00c
+bal dew_sleep                 // 0xa010
+bal dew_wake                  // 0xa014
+bal dew_fork                  // 0xa018
+bal dew_exec                  // 0xa01c
 // -----------------------------------------------------------------------
 // printf, when called
 //  r0 has addr of fmt string
@@ -237,6 +239,27 @@ mov r15, r14                 // return
 .label dew_wake
 str r14, [r13, #-4]!         // push lr on stack
 ker 0x14                     // 0x14 placed into r0, kernel rupt generated
+ldr r14, [r13], #4           // pop lr from stack
+mov r15, r14                 // return
+// -----------------------------------------------------------------------
+// fork, when called - no parameterd
+// Called in user mode
+// Not implemented yet
+.label dew_fork
+bal dew_fork
+str r14, [r13, #-4]!         // push lr on stack
+ker 0x15                     // 0x15 placed into r0, kernel rupt generated
+ldr r14, [r13], #4           // pop lr from stack
+mov r15, r14                 // return
+// -----------------------------------------------------------------------
+// exec, when called
+//  r0 has address of filename to load
+// currently exec does not start a proc running, just loads program in memory
+// Called in user mode
+.label dew_exec
+str r14, [r13, #-4]!         // push lr on stack
+mov r1, r0                   // set regs expected by ker 0x11                  
+ker 0x16                     // 0x16 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
 
@@ -578,6 +601,10 @@ cmp r1, 0x13                 // see if sleep
 beq do_sleep
 cmp r1, 0x14                 // see if wake
 beq do_wake
+cmp r1, 0x15                 // see if fork
+beq ker_not_supported        // fork implementation TBD
+cmp r1, 0x16                 // see if exec
+beq do_exec
 .label ker_not_supported
 bal ker_not_supported        // TODO: Improve this continuous loop
 .label do_printf
@@ -606,6 +633,11 @@ mov pc, lr
 .label do_wake
 ldr r0, [r0, TF_R1]          // get r1 from tf (r1 has channel on which to wakeup)
 blr wake
+ldr lr,  [sp], 4
+mov pc, lr
+.label do_exec
+ldr r0, [r0, TF_R1]          // get r1 from tf (r1 has addr of filename to load)
+blr exec
 ldr lr,  [sp], 4
 mov pc, lr
 .label tmr_rupt
@@ -791,3 +823,12 @@ bal sleep_loop
 .label sleep_done
 ldr lr,  [sp], 4
 mov pc, lr
+
+// -----------------------------------------------------------------------
+// r0 has address of filename to laod
+.label exec
+str lr,  [sp, -4]!
+ioi 0x12                      // ioi to load filename in r0
+ldr lr,  [sp], 4
+mov pc, lr
+
