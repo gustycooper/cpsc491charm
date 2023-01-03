@@ -31,6 +31,10 @@
 .label fork
 .text 0xa01c
 .label exec
+.text 0xa020
+.label malloc
+.text 0xa024
+.label free
 
 .data 0x0200
 .label gusty_str
@@ -71,6 +75,12 @@ ker 0x11
 mva r0, loadme
 blr exec          // exec loads a .o - does not start a proc
 .label after_exec
+mov r0, 4
+blr malloc
+mov r2, r0        // put addr returned from malloc in r2
+mva r0, fmt
+mva r1, gusty_str
+blr printf
 mov r0, 0x55      // sleep on channel 0x55
 blr sleep
 .label before_yield

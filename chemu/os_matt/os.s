@@ -26,6 +26,7 @@
 #define RUNNING 3
 #define READY 2
 #define SLEEP 4
+#define LOAD_MALLOC 1
 
 // -----------------------------------------------------------------------
 // Establihs sp for start
@@ -159,7 +160,14 @@ ptable
 0       // r14  56 38
 0       // r15  60 3c
         //      64 40
+.data 0xdf50
+.label umallocfn
+.string //umalloc.o
 
+.text 0xb000
+.label dew_free
+.text 0xb100
+.label dew_malloc
 // -----------------------------------------------------------------------
 // OS API - printf, scanf, yield, strcpy
 //
@@ -172,6 +180,8 @@ bal dew_sleep                 // 0xa010
 bal dew_wake                  // 0xa014
 bal dew_fork                  // 0xa018
 bal dew_exec                  // 0xa01c
+bal dew_malloc                // 0xa020
+bal dew_free                  // 0xa024
 // -----------------------------------------------------------------------
 // printf, when called
 //  r0 has addr of fmt string
@@ -300,6 +310,12 @@ mva r2, 0xefb0               // address of proc name (matt) in ptable[2]
 blr allocproc               
 mva r0, os_stack             // store os stack pointer into ir13
 mkd r5, r0
+mov r0, LOAD_MALLOC
+cmp r0, 0
+beq skip_load
+mva r0, umallocfn
+blr exec
+.label skip_load
 blr schedule
 
 // -----------------------------------------------------------------------
