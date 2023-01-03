@@ -37,6 +37,7 @@ extern int loop_stop;
 #define TF_PC         76
 #define STATE_READY   2
 #define STATE_RUN     3
+#define STATE_SLEEP   4
 
 int ishexdigit(char c) {
    return isdigit(c) || c == 'a' || c == 'b' || c == 'c' || c == 'd' || c == 'e' || c == 'f';
@@ -419,7 +420,7 @@ int do_cmd(int argc, char **cmdargv) {
         
         int proc_addr, pid, state, start, ustack, kstack, context, trapframe, procpc;
         char proc_name[16] = { 0 };
-        char *state_to_str[] = {"rdy  ", "run  ", "oth  "};
+        char *state_to_str[] = {"rdy  ", "run  ", "slp ", "oth  "};
 
         if (argc == 1) { // ps without args, show all with state != 0
             printres("%3s %16s %5s", "PID", "Name", "State");
@@ -428,10 +429,10 @@ int do_cmd(int argc, char **cmdargv) {
                 system_bus(proc_addr + PROC_STATE, &state, READ);
                 if (state == 0) // 0 indicates unused proc
                     continue;
-                else if (state == STATE_READY || state == STATE_RUN) // ready or run
+                else if (state == STATE_READY || state == STATE_RUN || state == STATE_SLEEP) // ready or run
                     state = state - 2; // adjust to index int state_to_str
                 else
-                    state = 2;         // select "oth" in state_to_str
+                    state = 3;         // select "oth" in state_to_str
                 system_bus(proc_addr, &pid, READ);   // pid is first entry in proc in ptable
                 get_proc_name(proc_addr, proc_name); // get proc_name from proc in ptable
                 printres("%3u %16s %s", pid, (char*)proc_name, state_to_str[state]);
