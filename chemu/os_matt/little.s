@@ -53,6 +53,10 @@
 0
 .label loadme
 .string //loadme.o
+.label par
+.string //par
+.label chd
+.string //chd
 .text 0x0300
 .label gusty
 sub sp, sp, 32
@@ -175,16 +179,37 @@ mov r0, 0x726f     // "ro" to r0
 shf r0, 16
 orr r0, r0, 0x6300 // "roc\0" to r0
 str r0, [sp, 4]    // "frkproc\0" at address top of stack
+mov r0, 0x7061     // pa to r0
+shf r0, 16
+orr r0, r0, 0x7200 // par to r0
+str r0, [sp, 8]    // par to sp+8
+mov r0, 0x6368     // ch to r0
+shf r0, 16
+orr r0, r0, 0x6400 // chd to r0
+str r0, [sp, 12]   // chd to sp+12
 mov r2, 1
-str r2, [sp, 8]    // i = 1
+str r2, [sp, 16]    // i = 1
 mov r0, sp
 blr printf
-ldr r2, [sp, 8]    // i to r2
+blr fork
+.label afterfork
+cmp r0, 0
+bne parent
+mov r0, sp
+add r0, r0, 12
+blr printf
+bal childdone
+.label parent
+mov r0, sp
+add r0, r0, 8
+blr printf
+.label childdone
+ldr r2, [sp, 16]    // i to r2
 .label loop_forkproc
 cmp r2, 0
 beq !end_forkproc
 add r2, r2, 1
-str r2, [sp, 8]    // i++
+str r2, [sp, 16]    // i++
 bal !loop_forkproc
 .label end_forkproc
 ldr lr, [sp, 4]

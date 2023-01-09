@@ -92,6 +92,7 @@ int interrupt(enum rupttype rt) {
  ******************************************************************/
 void addinst(char *inst);
 char instresult[80]; // used to add a result to ncurses result window
+void byteswap(int *p);
 
 void pipeline() {
     int x = insthist_i;
@@ -125,6 +126,19 @@ void pipeline() {
         }
         if (i == 0) {
             strcat(instresult, "<- pc");
+            if (bit_test(cpsr, U)) {
+                char procname[16] = {0};
+                strcat(instresult, " : User");
+                strcat(instresult, " : ");
+                system_bus(0, (int *)procname, READ); // read procname from memory address 0
+                byteswap((int *)procname);
+                strcat(instresult, procname);
+                system_bus(4, (int *)(procname+4), READ); // read procname from memory address 0
+                byteswap((int *)(procname+4));
+                strcat(instresult, procname+4);
+            }
+            else
+                strcat(instresult, " : OS");
             //printf(" <- pc");
             int opcodeupper = (inst >> 28) & 0xf; // TODO - should use decode() for this
             if (opcodeupper >= B_ADDR && opcodeupper <= B_REL) {

@@ -18,6 +18,7 @@
  */
 
 void printres(char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void update_display();
 
 extern int verbose_cpu;
 extern int total_steps;
@@ -128,6 +129,7 @@ static int mem_dump_addr = 0;
 static int mem_dump_len = MEM_DUMP_LEN;
 static int mem_list_addr = 0;
 static int mem_list_len = MEM_LIST_LEN;
+static int sm_sleep = 1; // default in slow motion is 1 sec per instr
 
 extern int breakpoint0, breakpoint1;
 
@@ -279,6 +281,34 @@ int do_cmd(int argc, char **cmdargv) {
             step_results(finished);
         pipeline();
         breakpoint1 = tbp;
+    } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 'm') {
+        if (argc == 2 || argc == 3) { // format is sm num or sm num num
+            if (argc == 3) {
+                sm_sleep = number(cmdargv[2]);
+                if (sm_sleep < 1 || sm_sleep > 5)
+                    sm_sleep = 1;
+            }
+            int steps = number(cmdargv[1]);
+            if (steps == -1 || steps > 30000) {
+                printres("%d: %s", steps, "invalid number of steps on sm command - 30000 max.");
+            }
+            else {
+                for (int i = 0; i < steps; i++) {
+                    //printf("i: %d\n", i);
+                    finished = step();
+                    step_results(finished);
+                    pipeline();
+                    update_display();
+                    //printf("i again: %d\n", i);
+                    sleep(sm_sleep);
+                    if (finished)
+                        break;
+                }
+            }
+        }
+        else {
+            printres("sm (slow motion) format: sm <steps> or sm <steps> <sleep>");
+        }
     } else if (cmdargv[0][0] == 's') {
         if (argc == 2) { // format is s num
             int steps = number(cmdargv[1]);
@@ -420,7 +450,7 @@ int do_cmd(int argc, char **cmdargv) {
         
         int proc_addr, pid, state, start, ustack, kstack, context, trapframe, procpc;
         char proc_name[16] = { 0 };
-        char *state_to_str[] = {"rdy  ", "run  ", "slp ", "oth  "};
+        char *state_to_str[] = {"rdy  ", "run  ", "slp  ", "oth  "};
 
         if (argc == 1) { // ps without args, show all with state != 0
             printres("%3s %16s %5s", "PID", "Name", "State");

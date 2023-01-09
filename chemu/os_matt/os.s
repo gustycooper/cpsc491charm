@@ -7,14 +7,17 @@
 #define TF_R1 8
 #define TF_R2 12
 #define TF_R3 16
+#define TF_LR 60
 #define TF_TYPE 64
 #define TF_CPSR 68
 #define TF_SPSR 72
 #define TF_PC 76
 #define TF_SIZE 80
 #define CONTEXT_SIZE 64
+#define PROC_PID 0
 #define PROC_STATE 4
 #define PROC_STARTADDR 8
+#define PROC_SZ 12
 #define PROC_USTACK 16
 #define PROC_KSTACK 20
 #define PROC_CONTEXT 24
@@ -29,7 +32,14 @@
 #define LOAD_MALLOC 1
 
 // -----------------------------------------------------------------------
-// Establihs sp for start
+// Establish addresses for malloc and free
+.text 0xa020
+.label malloc
+.text 0xa024
+.label free
+
+// -----------------------------------------------------------------------
+// Establish sp for start
 .stack 0xcf00
 .data 0xcf00
 .label os_stack
@@ -112,7 +122,25 @@ mva pc, do_tmr // branch to tmr rupt handler
 0x0000
 0x0000
 // process 4 0xefc0
+4       // pid
+2       // state
+0x900   // start addr
+0xa4    // size in bytes
+0       // *ustack
+0       // *kstack
+0       // *context
+0       // *tf
+0       // *parent
+0       // *chan
+0       // killed
+0       // *pgdir
+0x66726b70  // "frkproc"
+0x726f6300
+0x0000
+0x0000
 // process 5 0xf000
+0       // pid
+0       // state
 // process 6 0xf040
 // process 7 0xf080
 // process 8 0xf0c0
@@ -161,6 +189,8 @@ ptable
 0       // r15  60 3c
         //      64 40
 .data 0xdf50
+.label pid
+1
 .label umallocfn
 .string //umalloc.o
 
@@ -256,8 +286,8 @@ mov r15, r14                 // return
 // Called in user mode
 // Not implemented yet
 .label dew_fork
-bal dew_fork
 str r14, [r13, #-4]!         // push lr on stack
+mov r1, r14                  // pass parent's return addr to fork
 ker 0x15                     // 0x15 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
@@ -268,7 +298,7 @@ mov r15, r14                 // return
 // Called in user mode
 .label dew_exec
 str r14, [r13, #-4]!         // push lr on stack
-mov r1, r0                   // set regs expected by ker 0x11                  
+mov r1, r0                   // set regs expected by ker 0x16                  
 ker 0x16                     // 0x16 placed into r0, kernel rupt generated
 ldr r14, [r13], #4           // pop lr from stack
 mov r15, r14                 // return
@@ -307,6 +337,10 @@ blr allocproc
 mov r0, 2                    // index of proc for ptable, kstack, ustack
 mva r1, 0x0700               // start address of matt proc's code - see little.s
 mva r2, 0xefb0               // address of proc name (matt) in ptable[2]
+blr allocproc               
+mov r0, 3                    // index of proc for ptable, kstack, ustack
+mva r1, 0x0900               // start address of matt proc's code - see little.s
+mva r2, 0xeff0               // address of proc name (matt) in ptable[2]
 blr allocproc               
 mva r0, os_stack             // store os stack pointer into ir13
 mkd r5, r0
@@ -618,7 +652,7 @@ beq do_sleep
 cmp r1, 0x14                 // see if wake
 beq do_wake
 cmp r1, 0x15                 // see if fork
-beq ker_not_supported        // fork implementation TBD
+beq do_fork                  // fork implementation TBD
 cmp r1, 0x16                 // see if exec
 beq do_exec
 .label ker_not_supported
@@ -649,6 +683,11 @@ mov pc, lr
 .label do_wake
 ldr r0, [r0, TF_R1]          // get r1 from tf (r1 has channel on which to wakeup)
 blr wake
+ldr lr,  [sp], 4
+mov pc, lr
+.label do_fork
+ldr r0, [r0, TF_R1]          // get r1 from tf (r1 has return addr of parent)
+blr fork
 ldr lr,  [sp], 4
 mov pc, lr
 .label do_exec
@@ -722,7 +761,13 @@ str r1, [r0, PROC_STATE]
 mva r0, sched_context         // &sched_context GUSTY
 //ldr r0, sched_context       // GUSTY
 ldr r1, curr_proc
-ldr r2, [r1, PROC_KSTACK]     // store curr_proc->kstack to r2
+mov r3, PROC_NAME
+ldr r2, [r1, r3]              // load 1st 4 bytes of curr_proc->name to r2
+str r2, 0                     // put name at address 0, used in inst window
+add r3, r3, 4                 // increment r3 to get 2nd 4 bytes of curr_proc->name
+ldr r2, [r1, r3]              // load 2nd 4 bytes of curr_proc->name to r2
+str r2, 4                     // put name[4..8] at address 4, used in inst window
+ldr r2, [r1, PROC_KSTACK]     // load curr_proc->kstack to r2
 mkd r5, r2                    // mkd ir13, r2 - move r2 into ir13 (trapret uses)
 mkd r2, r2                    // mkd kr13, r2 - move r2 into kr13 - used for ker rupt
 ldr r1, [r1, PROC_CONTEXT]    // curr_proc->context
@@ -784,11 +829,19 @@ ldr r3, [r2, PROC_CONTEXT]    // retrieves context addr from proc
 str r1, [r3, CONTEXT_PC]      // str to p->context->pc
 mva r1, trapret
 str r1, [r3, CONTEXT_LR]      // str p->context->lr
+ldr r1, pid
+str r1, [r2, PROC_PID]        // update p->pid
+add r1, r1, 1
+str r1, pid                   // increment pid
+mov r1, READY
+str r1, [r2, PROC_STATE]      // set p->state to ready
 
 ldr r1, [sp], 4               // pop3 proc's name addr from stack
 add r0, r2, PROC_NAME         // address p->name to r0
 blr strcpy
 
+ldr r0, pid
+sub r0, r0, 1                 // return pid of allocated proc
 ldr lr, [sp], 4               // pop1 lr (ret addr) from stack
 mov pc, lr
 
@@ -841,7 +894,46 @@ ldr lr,  [sp], 4
 mov pc, lr
 
 // -----------------------------------------------------------------------
-// r0 has address of filename to laod
+// r0 has return address of parent
+.label fork
+str lr,  [sp, -4]!
+str r0,  [sp, -4]!            // save parents return addr on stack
+ldr r1, curr_proc
+ldr r0, [r1, PROC_SZ]         // malloc proc size to copy proc
+blr malloc                    // r0 has address for child proc
+str r0, [sp, -4]!             // push start addr of child on stack
+ldr r2, curr_proc
+ldr r1, [r2, PROC_STARTADDR]  // r1 has parent's start address
+ldr r2, [r2, PROC_SZ]         // r2 has parent's size
+div r2, r2, 4                 // convert size to words
+.label fork_loop
+cmp r2, 0
+beq fork_done
+ldr r3, [r1], 4               // ldr r3 with 4 bytes of parent
+str r3, [r0], 4               // copy 4 bytes of parent to child
+sub r2, r2, 1                 // decrement proc's size
+bal fork_loop                 // copy next 4 bytes (if any)
+.label fork_done
+// TODO: Must copy parent's stack to child and update child's sp
+ldr r2, curr_proc
+ldr r0, [r2, PROC_STARTADDR]  // parent->startaddr to r0
+ldr r1, [sp], 4               // pop start addr of child from stack
+ldr r2, [sp], 4               // pop parent return addr from stack
+sub r2, r2, r0                // parent return address - startaddress
+add r1, r1, r2                // add to create return address for child
+mov r0, 4                     // index to allocate in ptable
+//ldr r1, [sp]                  // get start addr of child from stack
+ldr r2, curr_proc
+add r2, r2, PROC_NAME         // give child same name as parent - for now
+blr allocproc
+ldr r1, curr_proc             // put child's pid in tf->ro
+ldr r1, [r1, PROC_TF]
+str r0, [r1, TF_R0]
+ldr lr,  [sp], 4              // restore lr from stack
+mov pc, lr
+
+// -----------------------------------------------------------------------
+// r0 has address of filename to load
 .label exec
 str lr,  [sp, -4]!
 ioi 0x12                      // ioi to load filename in r0

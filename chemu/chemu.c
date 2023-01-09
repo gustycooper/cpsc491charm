@@ -321,12 +321,36 @@ int getcmd(char *buf, int nbuf);
 
 #define BRIGHT_WHITE 15
 
+WINDOW *mainwin, *regwin, *inswin, *cmdwin, *reswin;
+
+void update_display() {
+#ifdef NCURSES
+    updateregwin(regwin);
+    updateinswin(inswin);
+    updatereswin(reswin);
+    //updatecmdwin(cmdwin, command_copy);
+    wrefresh(regwin);
+    wrefresh(inswin);
+    wrefresh(reswin);
+    wmove(cmdwin, 21, 3);
+    wrefresh(cmdwin);
+#else
+    printreswin();
+    printregwin();
+    printinswin();
+    // chemut accepts <space>s, which calls pipeline, but does not call printinstwin() to reset insti
+    // Two <space>s commands in a row will seg fault because insti gets too big.
+    // Reset insti to prevent seg fault
+    insti = 0;
+#endif
+}
+
 int main(int argc, char **argv) {
     bg_val = process_args(argc, argv); // 0 - black, 1 - white, -1 - error
     if (bg_val == -1)
         exit(EXIT_FAILURE);
 #ifdef NCURSES
-    WINDOW *mainwin, *regwin, *inswin, *cmdwin, *reswin;
+    //WINDOW *mainwin, *regwin, *inswin, *cmdwin, *reswin;
     int ch;
 
     if ( (mainwin = initscr()) == NULL ) {
