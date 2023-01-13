@@ -46,7 +46,7 @@ struct inst_info ins[] = {
     {0x72646c, "ldr", ldr, ldrstr, 0x00000010}, {0x62646c, "ldb", ldb, ldrstr, 0x00000020}, 
     {0x727473, "str", str, ldrstr, 0x00000030}, {0x627473, "stb", stb, ldrstr, 0x00000040}, 
     {0x646461, "add", add, arilog, 0x00000050}, {0x627573, "sub", sub, arilog, 0x00000051}, 
-    {0x6c756d, "mul", mul, arilog, 0x00000052}, {0x764964, "dIv", dIv, arilog, 0x00000053}, 
+    {0x6c756d, "mul", mul, arilog, 0x00000052}, {0x766964, "div", dIv, arilog, 0x00000053}, 
     {0x646f6d, "mod", mod, arilog, 0x00000054}, {0x646e61, "and", and, arilog, 0x00000055}, 
     {0x72726f, "orr", orr, arilog, 0x00000056}, {0x726f65, "eor", eor, arilog, 0x00000057}, 
     {0x636461, "adc", adc, arilog, 0x00000058}, {0x636273, "sbc", sbc, arilog, 0x00000059}, 
