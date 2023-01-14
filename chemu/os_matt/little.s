@@ -51,8 +51,12 @@
 .string //%d
 .label xvar
 0
+// put hex for loadme.o because Linux puts space after .o
 .label loadme
-.string //loadme.o
+0x6c6f6164
+0x6d652e6f
+0x00000000
+//.string //loadme.o
 .label par
 .string //par
 .label chd

@@ -191,8 +191,12 @@ ptable
 .data 0xdf50
 .label pid
 1
+// put hex for umalloc.o. Linux .string puts space after .o
 .label umallocfn
-.string //umalloc.o
+0x756d616c                    // umal
+0x6c6f632e                    // loc.
+0x6f000000                    // o\0\0\0
+// .string //umalloc.o
 
 .text 0xb000
 .label dew_free
