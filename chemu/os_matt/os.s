@@ -1,3 +1,6 @@
+// TODO: create OS specific labels. Like o_ prefix for all OS labels
+// Currently several OS labels (like .label exec) is used in little.s
+// chemun shows the value of little.s's exec
 // -----------------------------------------------------------------------
 #define PROC_SIZE 64
 #define KSTACK_SIZE 256
@@ -130,7 +133,7 @@ mva pc, do_tmr // branch to tmr rupt handler
 0x0000
 // process 4 0xefc0
 4       // pid
-2       // state
+0       // state TODO: set to 2 for little.s
 0x900   // start addr
 0xa4    // size in bytes
 0       // *ustack
@@ -349,10 +352,10 @@ mov r0, 2                    // index of proc for ptable, kstack, ustack
 mva r1, 0x0700               // start address of matt proc's code - see little.s
 mva r2, 0xefb0               // address of proc name (matt) in ptable[2]
 blr allocproc               
-mov r0, 3                    // index of proc for ptable, kstack, ustack
-mva r1, 0x0900               // start address of matt proc's code - see little.s
-mva r2, 0xeff0               // address of proc name (matt) in ptable[2]
-blr allocproc               
+//mov r0, 3                    // index of proc for ptable, kstack, ustack
+//mva r1, 0x0900               // start address of forkproc proc's code - see little.s
+//mva r2, 0xeff0               // address of proc name (frkproc) in ptable[2]
+//blr allocproc               
 mva r0, os_stack             // store os stack pointer into ir13
 mkd r5, r0
 mov r0, LOAD_MALLOC
@@ -532,6 +535,8 @@ str r0, context_switch_marker
 ldr r0, [sp], 4
 
 mkd r10, r0                  // mov r0 into kr10, save r0 so we can use it
+mov r0,  1                   // do_tmr's index number
+str r0, 0xfff0               // store at marker address
 mks r0,  r6                  // mks r0, ir14 // r0 gets return address
 str r0,  [sp, -4]!           // push return address
 mks r0,  r0                  // mks r0, cpsr // r0 gets cpsr, which is ipsr
@@ -680,12 +685,9 @@ ldr pc,  [sp], 4             // restore pc
 // -----------------------------------------------------------------------
 // r0 has addres of trap frame
 .label trap
-// Matt: (#2) build trap frame for returning proc
 
-str r0, [sp, -4]!
-mov r0, #2
-str r0, context_switch_marker
-ldr r0, [sp], 4
+mov r1, 2                    // trap's index number
+str r1, 0xfff0               // store at marker address
 
 str lr,  [sp, -4]!           // which stack are we storing lr to?
 ldr r1, [r0, TF_TYPE]        // put trap type (0x40, 0x80) in r1
@@ -1014,6 +1016,8 @@ mov pc, lr
 
 // -----------------------------------------------------------------------
 // r0 has address of filename to load
+// TODO: ioi load memory with .text causes total_steps to be reset to 0
+// TODO: ioi load memory with .stack may cause problems with r13
 .label exec
 str lr,  [sp, -4]!
 ioi 0x12                      // ioi to load filename in r0
