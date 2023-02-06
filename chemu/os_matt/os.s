@@ -52,6 +52,13 @@ mva pc, do_ker // branch to kerel mode rupt handler
 mva pc, do_tmr // branch to tmr rupt handler
 
 // -----------------------------------------------------------------------
+// Address of context switch marker value (ranges from integers 0 to 7,
+// 1 - 7 being steps in context switch, and 0 being not in switch)
+.data 0xfff0
+.label context_switch_marker
+0
+
+// -----------------------------------------------------------------------
 // process table (ptable) - holds 8 procs
 // A proc in the ptable is allocated 64 bytes - uint and pointers are 4 bytes
 //    uint pid
@@ -377,6 +384,7 @@ str r0,  [sp, -4]!           // push cpsr
 mov r0,  #0x40               // 0x40 indicates ker inst rupt
 str r0,  [sp, -4]!           // push opcode for ker inst rupt
 // Future-TODO: disable interrupts
+
                              // save regs on trapframe
 str r14, [sp, -4]!           // push r14
 str r13, [sp, -4]!           // push r13
@@ -438,6 +446,14 @@ mkd r5, r0                   // mkd ir13, r0, put user mode sp into ir13
                             
 //mov sp, r0                 // restore sp
 // TODO: We lose the user mode sp
+// Matt: (#7) Context marker for popping the trap frame from
+// the kstack into the real registers
+
+str r0, [sp, -4]!
+mov r0, #7
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 ldr r0,  [sp], 4             // restore regs from trap frame
 ldr r1,  [sp], 4
 ldr r2,  [sp], 4
@@ -469,6 +485,13 @@ mkd r1, r14                  // mkd kpsr, lr, put kpsr in kpsr
 ldr r14, [sp], 4             // get tf->pc from stack
 mkd r6, r14                  // mkd ir14, r14 - put pc into ir14
 mks r14, r10                 // mks r14, kr10 - get lr from kr10
+// Matt: (#8) Ready to run new current proc.
+
+str r0, [sp, -4]!
+mov r0, #8
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 rfi 1                        // pc <--> ir14, cpsr <--> ipsr, r13 <--> ir13
                             
 // -----------------------------------------------------------------------
@@ -500,6 +523,14 @@ rfi 1                        // pc <--> ir14, cpsr <--> ipsr, r13 <--> ir13
 // return addr is in ir14
 // user mode sp is in ir13
 .label do_tmr
+// Matt: (#1) Context switch marker for building
+// trap frame for current proc
+
+str r0, [sp, -4]!
+mov r0, #1
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 mkd r10, r0                  // mov r0 into kr10, save r0 so we can use it
 mks r0,  r6                  // mks r0, ir14 // r0 gets return address
 str r0,  [sp, -4]!           // push return address
@@ -596,6 +627,16 @@ rfi 1
 // };
 // Note: r0, r1, and r13 are saved to have 16*4 bytes in the context
 .label swtch
+// Matt: (#depends) Context switch marker for performing
+// context switch; try to find a way to generalize
+// description (instead of hard coding scheduler -> gusty,
+// is it possible to do (proc name) -> (proc name)? )
+
+str r0, [sp, -4]!
+mov r0, #-1
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 // save regs into context
 str lr,  [sp, -4]!           // save return address, lr has return address
 str lr,  [sp, -4]!           // save lr
@@ -639,6 +680,13 @@ ldr pc,  [sp], 4             // restore pc
 // -----------------------------------------------------------------------
 // r0 has addres of trap frame
 .label trap
+// Matt: (#2) build trap frame for returning proc
+
+str r0, [sp, -4]!
+mov r0, #2
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 str lr,  [sp, -4]!           // which stack are we storing lr to?
 ldr r1, [r0, TF_TYPE]        // put trap type (0x40, 0x80) in r1
 cmp r1, 0x40                 // 0x4 is system call (ker instr)
@@ -719,6 +767,13 @@ mov pc, lr
 //  r0 is output, has **, addr of where to store addr of prev context switched from
 //  r1 is input, has *, addr of where to store the context switching to
 .label sched
+// Matt: (#4) Contex switch marker for entering sched
+
+str r0, [sp, -4]!
+mov r0, #4
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 str lr,  [sp, -4]!
 // curr_proc->context points to top of context, swtch pushes regs using r0
 // Must add CONTEXT_SIZE to the pointer
@@ -738,6 +793,13 @@ mov pc, lr
 // don't forget the first sched
 //mva r0, schedcontext        // temporary; scheduler stack is current at 0x6000
 //ldr sp, [r0, 36]
+// Matt: (#5) Context switch marker for entering scheduler
+
+str r0, [sp, -4]!
+mov r0, #5
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 sub sp, sp, 4                 // allocate stack space for struct proc* p
 .label for_loop_outer
 mva r0, ptable
@@ -751,11 +813,18 @@ ldr r1, [r0, PROC_STATE]
 cmp r1, READY                 // check if process is RUNNABLE
 bne inner_incr
 // yield changes curr_proc to READY
+// Matt: (#6) Context switch marker for choosing new proc;
+// is there a way to get the name of the next proc
+// to be run and print it to the screen?
+
+str r0, [sp, -4]!
+mov r0, #6
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 ldr r0, curr_proc             // change old curr_proc state to READY
 mov r1, READY
 //str r1, [r0, PROC_STATE]
-
-.label bobby
 ldr r0, [sp, 0]               // put p into r0
 str r0, curr_proc
 // switchuvm - later
@@ -851,6 +920,13 @@ mov pc, lr
 
 // -----------------------------------------------------------------------
 .label yield
+// Matt: (#3) Proc yields to OS scheduler
+
+str r0, [sp, -4]!
+mov r0, #3
+str r0, context_switch_marker
+ldr r0, [sp], 4
+
 str lr,  [sp, -4]!
 ldr r0, curr_proc
 mov r1, READY                 // put READY state in r1
@@ -943,4 +1019,3 @@ str lr,  [sp, -4]!
 ioi 0x12                      // ioi to load filename in r0
 ldr lr,  [sp], 4
 mov pc, lr
-
