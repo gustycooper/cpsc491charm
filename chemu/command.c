@@ -13,12 +13,20 @@
 #include "isa.h"
 #include "dict.h"
 
+char *os_happenings[] = {
+    "Default",
+    "do_tmr",
+    "trap",
+    "Matt"
+};
+
 /*
  Commands - see documentation for description of commands
  */
 
 void printres(char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void update_display();
+
 
 extern int verbose_cpu;
 extern int total_steps;
@@ -129,9 +137,13 @@ static int mem_dump_addr = 0;
 static int mem_dump_len = MEM_DUMP_LEN;
 static int mem_list_addr = 0;
 static int mem_list_len = MEM_LIST_LEN;
-static int sm_sleep = 1; // default in slow motion is 1 sec per instr
+#define SM_PERIOD 10
+static int sm_sleep = 1;          // default in slow motion is 1 sec per instr
+static int sm_keruser = 1;        // default in slow motion for both kernel and user mode
+static int sm_timer = 0;          // default in slow motion is no timer interrupts
+static int sm_period = SM_PERIOD; // default slow motion steps per timer interrupt
 
-extern int breakpoint0, breakpoint1;
+extern int breakpoint0, breakpoint1, cpsr;
 
 // Parameter finished is the status returned from step_n / step.
 void step_results(enum stepret finished) {
@@ -255,7 +267,21 @@ int do_cmd(int argc, char **cmdargv) {
             printres("Regs.");
 #endif
         }
-    } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 't') {
+    } 
+/*
+Total Steps User Interface and Design
+
+The st command is used to control total steps.
+
+> st - st by itself displays the total steps executed 
+
+> st <num> establishes the number of steps the emulater executes and then stops.
+By default <num> is 500.
+Stopping is handy when running large programs that may get away from you.
+After <num> steps, your program stops showing you where it is.
+The number of steps is in the variable loop_stop.
+ */
+    else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 't') {
         if (argc == 2) { // format is st num
             int steps = number(cmdargv[1]);
             if (steps == -1 || steps > 30000) {
@@ -281,33 +307,140 @@ int do_cmd(int argc, char **cmdargv) {
             step_results(finished);
         pipeline();
         breakpoint1 = tbp;
-    } else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 'm') {
-        if (argc == 2 || argc == 3) { // format is sm num or sm num num
+    } 
+/*
+Slow Motion User Interface and Design
+
+> sm <n> - executes <n> instructions in slow motion
+After each instruction, sleep(sm_sleep) is called.
+sm_sleep is initialized to 1 section.
+
+> sm <n1> <n2> - executes <n1> instructions. sm_sleep is set to <n2>
+<n2> allows you to change the sleep time between instructions
+<n2> must be between 1 and 5
+
+By default, both kernel mode and user mode instructions are in slow motion.
+sm_keruser is initialized to 1, which performs slow motion in ker and user.
+When in slow motion, command executes one instruction, updates display, and sleeps(sm_sleep)
+
+> smu - sets slow motion to user mode only
+sm_keruser is set to 0
+In this mode, kernel code is executed, but there is not a sleep between instructions
+Also, the update of the display is not done
+
+> smb - sets slow motion to both user and kernel mode
+sm_keruser is set to 1
+
+By default, slow motion does not generate timer interrupts
+sm_timer is set to 0
+When slow motion timer interrupts are enabled, they are by default every 10 instr in user mode
+sm_period is set to 10
+
+> smt - causes slow motion to generate a timer interrupts in default period
+> smt 0 - turns off slow motion timer interrupts, reset sm_period to default
+> smt <n> - sets the period to <n> when <n> > 0
+
+Slow motion also reports various OS events. The OS reports events in memory location 0xfff0.
+Slow motion examines 0xfff0. Whenever it changes, the event is printed.
+Each event has an index, which is used as an index into the array os_happenings.
+After printing the event slow motion does a sleep(sm_sleep)
+
+Slow motion also reports changes in memory address 0. Currently, scheduler puts the 
+proc name that is selected as curr_proc in memory addresses 0 through 7; however,
+slow motion compares 4 bytes of the proc name - memory addresses 0 through 3. 
+This means gusty and gustie procs would not appear as a changes.
+After printing the proc's name, slow motion does a sleep(sm_sleep)
+ */
+    else if (cmdargv[0][0] == 's' && cmdargv[0][1] == 'm') {
+        if (cmdargv[0][2] == 'u') {
+            sm_keruser = 0;
+        }
+        else if (cmdargv[0][2] == 'b') {
+            sm_keruser = 1;
+        }
+        else if (cmdargv[0][2] == 't') {
+            sm_timer = 1;
+            if (argc == 2) {
+                sm_period = number(cmdargv[1]);
+                if (sm_period <= 0) {
+                    sm_timer = 0;
+                    sm_period = SM_PERIOD;
+                }
+            }
+        }
+        else if (argc == 1) {  // display sm attributes
+            printres("%s, timer: %d, period: %d", sm_keruser ? "smb" : "smu", sm_timer, sm_period);
+        }
+        else if (argc == 2 || argc == 3) { // format is sm num or sm num num
             if (argc == 3) {
                 sm_sleep = number(cmdargv[2]);
                 if (sm_sleep < 1 || sm_sleep > 5)
                     sm_sleep = 1;
             }
             int steps = number(cmdargv[1]);
-            if (steps == -1 || steps > 30000) {
+            if (steps < 0 || steps > 30000) {
                 printres("%d: %s", steps, "invalid number of steps on sm command - 30000 max.");
             }
             else {
+                int kval1, kval2, uval1, uval2, uval3, uval4, usteps = 0;
+                system_bus(0xfff0, &kval1, READ);
+                system_bus(0x0000, &uval1, READ);
+                system_bus(0x0004, &uval2, READ);
                 for (int i = 0; i < steps; i++) {
                     //printf("i: %d\n", i);
-                    finished = step();
-                    step_results(finished);
-                    pipeline();
-                    update_display();
-                    //printf("i again: %d\n", i);
-                    sleep(sm_sleep);
-                    if (finished)
+                    finished = step_n(1);
+                    if (sm_keruser || (bit_test(cpsr, U) && get_reg(PC) < 0x8000)) {
+                        step_results(finished);
+                        pipeline();
+                        update_display();
+                        //printf("i again: %d\n", i);
+                        sleep(sm_sleep);
+                    }
+                    // OS services like strcpy are run in user mode
+                    // The are located above 0x8000
+                    // TODO: Review the checking of addresses < 0x8000. See if another way.
+                    if (sm_timer && bit_test(cpsr, U) && get_reg(PC) < 0x8000) {
+                        usteps++;
+                        if ((usteps % sm_period) == 0) {
+                            interrupt(EXTERNRUPT);
+                        }
+                    }
+                    if (finished) {
                         break;
+                    }
+                    system_bus(0xfff0, &kval2, READ);
+                    if (kval1 != kval2) {
+                        if (kval2 > 3) // TODO: 3 is num of events is os_happenings
+                            kval2 = 0; // default
+                        printres("%s", os_happenings[kval2]);
+                        sleep(sm_sleep);
+                        kval1 = kval2;
+                    }
+                    system_bus(0x0000, &uval3, READ);
+                    system_bus(0x0004, &uval4, READ);
+                    if (uval1 != uval3 && uval2 != uval4) {
+                        char procname[9];
+                        procname[0] = uval3 >> 24;
+                        procname[1] = (uval3 >> 16) & 0xff;
+                        procname[2] = (uval3 >> 8)  & 0xff;
+                        procname[3] = uval3 & 0xff;
+                        procname[4] = uval4 >> 24;
+                        procname[5] = (uval4 >> 16) & 0xff;
+                        procname[6] = (uval4 >> 8)  & 0xff;
+                        procname[7] = uval4 & 0xff;
+                        procname[8] = 0; // uval3 and uval4 may have a null termination
+                        printres("proc: %s", procname);
+                        sleep(sm_sleep);
+                        uval1 = uval3;
+                        uval2 = uval4;
+                    }
                 }
+                step_results(finished);
+                pipeline();
             }
         }
         else {
-            printres("sm (slow motion) format: sm <steps> or sm <steps> <sleep>");
+            printres("sm (slow motion) format: smu or sma or sm <steps> or sm <steps> <sleep>");
         }
     } else if (cmdargv[0][0] == 's') {
         if (argc == 2) { // format is s num
