@@ -15,9 +15,14 @@
 
 char *os_happenings[] = {
     "Default",
-    "do_tmr",
-    "trap",
-    "Matt"
+    "Trap Frame", // Matt: (#1) Context switch marker for building
+    "Switch", // Matt: (#2) Context switch marker for performing
+    "yield to sched", // Matt: (#3) Proc yields to OS scheduler
+    "sched", // Matt: (#4) Contex switch marker for entering sched
+    "scheduler", // Matt: (#5) Context switch marker for entering scheduler
+    "schedules proc", // Matt: (#6) Context switch marker for choosing new proc;
+    "restore proc regs", // Matt: (#7) Context marker for popping the trap frame from
+    "read to run proc" // Matt: (#8) Ready to run new current proc.
 };
 
 /*
@@ -410,10 +415,12 @@ After printing the proc's name, slow motion does a sleep(sm_sleep)
                     }
                     system_bus(0xfff0, &kval2, READ);
                     if (kval1 != kval2) {
-                        if (kval2 > 3) // TODO: 3 is num of events is os_happenings
+                        if (kval2 > 8) // TODO: 3 is num of events is os_happenings
                             kval2 = 0; // default
                         printres("%s", os_happenings[kval2]);
-                        sleep(sm_sleep);
+                        pipeline();
+                        update_display();
+                        sleep(5*sm_sleep);
                         kval1 = kval2;
                     }
                     system_bus(0x0000, &uval3, READ);
@@ -430,7 +437,7 @@ After printing the proc's name, slow motion does a sleep(sm_sleep)
                         procname[7] = uval4 & 0xff;
                         procname[8] = 0; // uval3 and uval4 may have a null termination
                         printres("proc: %s", procname);
-                        sleep(sm_sleep);
+                        sleep(2*sm_sleep);
                         uval1 = uval3;
                         uval2 = uval4;
                     }
