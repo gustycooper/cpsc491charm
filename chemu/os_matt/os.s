@@ -638,7 +638,11 @@ rfi 1
 // is it possible to do (proc name) -> (proc name)? )
 
 str r0, [sp, -4]!
+<<<<<<< HEAD
 mov r0, #2
+=======
+mov r0, #-1
+>>>>>>> ca77dca9cb1437a05ed7340fcd9511a46be8c501
 str r0, context_switch_marker
 ldr r0, [sp], 4
 
@@ -686,8 +690,13 @@ ldr pc,  [sp], 4             // restore pc
 // r0 has addres of trap frame
 .label trap
 
+<<<<<<< HEAD
 //mov r1, 2                    // trap's index number
 //str r1, 0xfff0               // store at marker address
+=======
+mov r1, 2                    // trap's index number
+str r1, 0xfff0               // store at marker address
+>>>>>>> ca77dca9cb1437a05ed7340fcd9511a46be8c501
 
 str lr,  [sp, -4]!           // which stack are we storing lr to?
 ldr r1, [r0, TF_TYPE]        // put trap type (0x40, 0x80) in r1
